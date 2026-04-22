@@ -70,6 +70,7 @@ type SelectionState = {
 };
 
 type DistributeMode = 'start' | 'center' | 'end';
+type DistributeAnchor = 'endpoints' | 'primary';
 
 function clamp(n: number, min: number, max: number) {
   return Math.max(min, Math.min(max, n));
@@ -87,40 +88,48 @@ function uid(prefix: string) {
   return `${prefix}_${Math.random().toString(36).slice(2)}_${Date.now()}`;
 }
 
+type SnapCandidate = { value: number; label: string };
+
 function smartSnapValue(
   value: number,
-  candidates: number[],
+  candidates: SnapCandidate[],
   threshold: number,
-): { value: number; snapped: boolean } {
+): { value: number; snapped: boolean; label?: string } {
   let best = value;
+  let bestLabel: string | undefined;
   let bestDelta = Number.POSITIVE_INFINITY;
   for (let i = 0; i < candidates.length; i++) {
     const c = candidates[i];
-    const d = Math.abs(c - value);
+    const d = Math.abs(c.value - value);
     if (d < bestDelta) {
       bestDelta = d;
-      best = c;
+      best = c.value;
+      bestLabel = c.label;
     }
   }
-  if (bestDelta <= threshold) return { value: best, snapped: true };
+  if (bestDelta <= threshold)
+    return { value: best, snapped: true, label: bestLabel };
   return { value, snapped: false };
 }
 
 function bestSnapPosition(
   start: number,
   size: number | null,
-  candidates: number[],
+  candidates: SnapCandidate[],
   threshold: number,
-): { pos: number; guide?: number } {
+): { pos: number; guide?: number; label?: string } {
   if (!candidates.length) return { pos: start };
   if (!size || size <= 0) {
     const s = smartSnapValue(start, candidates, threshold);
-    return s.snapped ? { pos: s.value, guide: s.value } : { pos: start };
+    return s.snapped
+      ? { pos: s.value, guide: s.value, label: s.label }
+      : { pos: start };
   }
 
   const offsets = [0, size / 2, size];
   let bestPos = start;
   let bestGuide: number | undefined;
+  let bestLabel: string | undefined;
   let bestDelta = Number.POSITIVE_INFINITY;
   for (let i = 0; i < offsets.length; i++) {
     const offset = offsets[i];
@@ -133,9 +142,11 @@ function bestSnapPosition(
       bestDelta = delta;
       bestPos = pos;
       bestGuide = s.value;
+      bestLabel = s.label;
     }
   }
-  if (bestDelta <= threshold) return { pos: bestPos, guide: bestGuide };
+  if (bestDelta <= threshold)
+    return { pos: bestPos, guide: bestGuide, label: bestLabel };
   return { pos: start };
 }
 
@@ -214,6 +225,7 @@ const DatacenterLayoutPage: React.FC = () => {
     height: number;
   } | null>(null);
   const [guides, setGuides] = useState<{ x?: number; y?: number } | null>(null);
+  const [snapHint, setSnapHint] = useState<string | null>(null);
   const [layers, setLayers] = useState({
     showCabinets: true,
     showZones: true,
@@ -226,6 +238,8 @@ const DatacenterLayoutPage: React.FC = () => {
     useState<DistributeMode>('center');
   const [distributeModeY, setDistributeModeY] =
     useState<DistributeMode>('center');
+  const [distributeAnchor, setDistributeAnchor] =
+    useState<DistributeAnchor>('endpoints');
 
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const layoutRef = useRef<IDC.DatacenterLayout | null>(null);
@@ -714,6 +728,7 @@ const DatacenterLayoutPage: React.FC = () => {
 
       if (drag.kind === 'pan') {
         setGuides(null);
+        setSnapHint(null);
         const dx = e.clientX - drag.startClientX;
         const dy = e.clientY - drag.startClientY;
         setOffset({ x: drag.startOffsetX + dx, y: drag.startOffsetY + dy });
@@ -721,6 +736,7 @@ const DatacenterLayoutPage: React.FC = () => {
       }
 
       if (drag.kind === 'box_select') {
+        setSnapHint(null);
         const wrap = wrapRef.current;
         if (!wrap) return;
         const rect = wrap.getBoundingClientRect();
@@ -736,28 +752,57 @@ const DatacenterLayoutPage: React.FC = () => {
 
       const curLayout = layoutRef.current;
       const snapThreshold = 0.15;
-      const candidatesX: number[] = [];
-      const candidatesY: number[] = [];
+      const candidatesX: SnapCandidate[] = [];
+      const candidatesY: SnapCandidate[] = [];
       if (snapEnabled && curLayout) {
-        candidatesX.push(0, curLayout.canvasWidth, curLayout.canvasWidth / 2);
-        candidatesY.push(0, curLayout.canvasHeight, curLayout.canvasHeight / 2);
-        for (let i = 0; i < cabinetItems.length; i++) {
-          const c = cabinetItems[i];
-          if (selection.cabinets.includes(c.cabinetId)) continue;
-          candidatesX.push(c.x, c.x + cabinetW / 2, c.x + cabinetW);
-          candidatesY.push(c.y, c.y + cabinetD / 2, c.y + cabinetD);
+        const addX = (value: number, label: string) =>
+          candidatesX.push({ value, label });
+        const addY = (value: number, label: string) =>
+          candidatesY.push({ value, label });
+
+        addX(0, '画布左边缘');
+        addX(curLayout.canvasWidth / 2, '画布水平中心');
+        addX(curLayout.canvasWidth, '画布右边缘');
+        addY(0, '画布上边缘');
+        addY(curLayout.canvasHeight / 2, '画布垂直中心');
+        addY(curLayout.canvasHeight, '画布下边缘');
+
+        if (layers.showCabinets) {
+          for (let i = 0; i < cabinetItems.length; i++) {
+            const c = cabinetItems[i];
+            if (selection.cabinets.includes(c.cabinetId)) continue;
+            const name = cabinetMap.get(c.cabinetId)?.code || c.cabinetId;
+            addX(c.x, `机柜 ${name} 左边缘`);
+            addX(c.x + cabinetW / 2, `机柜 ${name} 中心`);
+            addX(c.x + cabinetW, `机柜 ${name} 右边缘`);
+            addY(c.y, `机柜 ${name} 上边缘`);
+            addY(c.y + cabinetD / 2, `机柜 ${name} 中心`);
+            addY(c.y + cabinetD, `机柜 ${name} 下边缘`);
+          }
         }
-        for (let i = 0; i < curLayout.zones.length; i++) {
-          const z = curLayout.zones[i];
-          if (selection.zones.includes(z.id)) continue;
-          candidatesX.push(z.x, z.x + z.width / 2, z.x + z.width);
-          candidatesY.push(z.y, z.y + z.height / 2, z.y + z.height);
+
+        if (layers.showZones) {
+          for (let i = 0; i < curLayout.zones.length; i++) {
+            const z = curLayout.zones[i];
+            if (selection.zones.includes(z.id)) continue;
+            const name = z.name || zoneLabel(z.type);
+            addX(z.x, `区域 ${name} 左边缘`);
+            addX(z.x + z.width / 2, `区域 ${name} 中心`);
+            addX(z.x + z.width, `区域 ${name} 右边缘`);
+            addY(z.y, `区域 ${name} 上边缘`);
+            addY(z.y + z.height / 2, `区域 ${name} 中心`);
+            addY(z.y + z.height, `区域 ${name} 下边缘`);
+          }
         }
-        for (let i = 0; i < curLayout.facilities.length; i++) {
-          const f = curLayout.facilities[i];
-          if (selection.facilities.includes(f.id)) continue;
-          candidatesX.push(f.x);
-          candidatesY.push(f.y);
+
+        if (layers.showFacilities) {
+          for (let i = 0; i < curLayout.facilities.length; i++) {
+            const f = curLayout.facilities[i];
+            if (selection.facilities.includes(f.id)) continue;
+            const name = f.name || f.type;
+            addX(f.x, `设施 ${name} X`);
+            addY(f.y, `设施 ${name} Y`);
+          }
         }
       }
 
@@ -787,8 +832,15 @@ const DatacenterLayoutPage: React.FC = () => {
               x: snapX.guide,
               y: snapY.guide,
             });
+            const parts: string[] = [];
+            if (snapX.guide !== undefined && snapX.label)
+              parts.push(`X吸附：${snapX.label}`);
+            if (snapY.guide !== undefined && snapY.label)
+              parts.push(`Y吸附：${snapY.label}`);
+            setSnapHint(parts.length ? parts.join('；') : null);
           } else {
             setGuides(null);
+            setSnapHint(null);
           }
           setLayout((prev) => {
             if (!prev) return prev;
@@ -854,9 +906,16 @@ const DatacenterLayoutPage: React.FC = () => {
               x: snapX.guide,
               y: snapY.guide,
             });
+            const parts: string[] = [];
+            if (snapX.guide !== undefined && snapX.label)
+              parts.push(`X吸附：${snapX.label}`);
+            if (snapY.guide !== undefined && snapY.label)
+              parts.push(`Y吸附：${snapY.label}`);
+            setSnapHint(parts.length ? parts.join('；') : null);
             setCabinetItem(drag.cabinetId, { x: nextX, y: nextY });
           } else {
             setGuides(null);
+            setSnapHint(null);
             const nextX = snapEnabled ? snap(rawX, gridStep) : rawX;
             const nextY = snapEnabled ? snap(rawY, gridStep) : rawY;
             setCabinetItem(drag.cabinetId, { x: nextX, y: nextY });
@@ -891,8 +950,15 @@ const DatacenterLayoutPage: React.FC = () => {
               x: snapX.guide,
               y: snapY.guide,
             });
+            const parts: string[] = [];
+            if (snapX.guide !== undefined && snapX.label)
+              parts.push(`X吸附：${snapX.label}`);
+            if (snapY.guide !== undefined && snapY.label)
+              parts.push(`Y吸附：${snapY.label}`);
+            setSnapHint(parts.length ? parts.join('；') : null);
           } else {
             setGuides(null);
+            setSnapHint(null);
           }
           setLayout((prev) => {
             if (!prev) return prev;
@@ -958,9 +1024,16 @@ const DatacenterLayoutPage: React.FC = () => {
               x: snapX.guide,
               y: snapY.guide,
             });
+            const parts: string[] = [];
+            if (snapX.guide !== undefined && snapX.label)
+              parts.push(`X吸附：${snapX.label}`);
+            if (snapY.guide !== undefined && snapY.label)
+              parts.push(`Y吸附：${snapY.label}`);
+            setSnapHint(parts.length ? parts.join('；') : null);
             setFacilityItem(drag.id, { x: nextX, y: nextY });
           } else {
             setGuides(null);
+            setSnapHint(null);
             const nextX = snapEnabled ? snap(rawX, gridStep) : rawX;
             const nextY = snapEnabled ? snap(rawY, gridStep) : rawY;
             setFacilityItem(drag.id, { x: nextX, y: nextY });
@@ -997,8 +1070,15 @@ const DatacenterLayoutPage: React.FC = () => {
               x: snapX.guide,
               y: snapY.guide,
             });
+            const parts: string[] = [];
+            if (snapX.guide !== undefined && snapX.label)
+              parts.push(`X吸附：${snapX.label}`);
+            if (snapY.guide !== undefined && snapY.label)
+              parts.push(`Y吸附：${snapY.label}`);
+            setSnapHint(parts.length ? parts.join('；') : null);
           } else {
             setGuides(null);
+            setSnapHint(null);
           }
           setLayout((prev) => {
             if (!prev) return prev;
@@ -1056,9 +1136,16 @@ const DatacenterLayoutPage: React.FC = () => {
               x: snapX.guide,
               y: snapY.guide,
             });
+            const parts: string[] = [];
+            if (snapX.guide !== undefined && snapX.label)
+              parts.push(`X吸附：${snapX.label}`);
+            if (snapY.guide !== undefined && snapY.label)
+              parts.push(`Y吸附：${snapY.label}`);
+            setSnapHint(parts.length ? parts.join('；') : null);
             setZoneItem(drag.id, { x: nextX, y: nextY });
           } else {
             setGuides(null);
+            setSnapHint(null);
             const nextX = snapEnabled ? snap(rawX, gridStep) : rawX;
             const nextY = snapEnabled ? snap(rawY, gridStep) : rawY;
             setZoneItem(drag.id, { x: nextX, y: nextY });
@@ -1068,6 +1155,8 @@ const DatacenterLayoutPage: React.FC = () => {
       }
 
       if (drag.kind === 'zone_resize' && drag.id && drag.corner) {
+        setGuides(null);
+        setSnapHint(null);
         const startX = drag.startX || 0;
         const startY = drag.startY || 0;
         const startW = drag.startW || gridStep;
@@ -1148,9 +1237,15 @@ const DatacenterLayoutPage: React.FC = () => {
       setFacilityItem,
       snapEnabled,
       cabinetItems,
+      cabinetMap,
+      cabinetW,
+      cabinetD,
       selection.cabinets,
       selection.zones,
       selection.facilities,
+      layers.showCabinets,
+      layers.showZones,
+      layers.showFacilities,
     ],
   );
 
@@ -1162,6 +1257,7 @@ const DatacenterLayoutPage: React.FC = () => {
       if (drag.kind === 'box_select') {
         setSelectBox(null);
         setGuides(null);
+        setSnapHint(null);
         const cur = layoutRef.current;
         if (cur) {
           const end = toWorld(e.clientX, e.clientY);
@@ -1220,6 +1316,7 @@ const DatacenterLayoutPage: React.FC = () => {
       }
 
       setGuides(null);
+      setSnapHint(null);
       if (drag.beforeLayout) pushHistory(drag.beforeLayout);
       dragRef.current = null;
       try {
@@ -1235,6 +1332,7 @@ const DatacenterLayoutPage: React.FC = () => {
       layers.showCabinets,
       layers.showFacilities,
       layers.showZones,
+      setSnapHint,
     ],
   );
 
@@ -1676,12 +1774,32 @@ const DatacenterLayoutPage: React.FC = () => {
 
     const start = span(first);
     const end = span(last);
+    let primaryIdx = -1;
+    let primaryLine = 0;
+    if (distributeAnchor === 'primary' && selected) {
+      const key =
+        selected.type === 'cabinet'
+          ? `cabinet:${selected.cabinetId}`
+          : `${selected.type}:${selected.id}`;
+      primaryIdx = sorted.findIndex((it) => `${it.type}:${it.id}` === key);
+      if (primaryIdx >= 0) primaryLine = span(sorted[primaryIdx]);
+    }
     const step = (end - start) / (sorted.length - 1 || 1);
+    const leftStep = primaryIdx > 0 ? (primaryLine - start) / primaryIdx : 0;
+    const rightStep =
+      primaryIdx >= 0 && primaryIdx < sorted.length - 1
+        ? (end - primaryLine) / (sorted.length - 1 - primaryIdx || 1)
+        : 0;
 
     const nextX = new Map<string, number>();
     for (let idx = 0; idx < sorted.length; idx++) {
       const it = sorted[idx];
-      const target = start + step * idx;
+      const target =
+        primaryIdx >= 0
+          ? idx <= primaryIdx
+            ? start + leftStep * idx
+            : primaryLine + rightStep * (idx - primaryIdx)
+          : start + step * idx;
       let x = it.x1;
       if (distributeModeX === 'start') x = target;
       else if (distributeModeX === 'end') x = target - it.w;
@@ -1710,8 +1828,10 @@ const DatacenterLayoutPage: React.FC = () => {
   }, [
     cabinetW,
     gridStep,
+    distributeAnchor,
     distributeModeX,
     pushHistory,
+    selected,
     selection.cabinets,
     selection.zones,
     selection.facilities,
@@ -1785,12 +1905,32 @@ const DatacenterLayoutPage: React.FC = () => {
 
     const start = span(first);
     const end = span(last);
+    let primaryIdx = -1;
+    let primaryLine = 0;
+    if (distributeAnchor === 'primary' && selected) {
+      const key =
+        selected.type === 'cabinet'
+          ? `cabinet:${selected.cabinetId}`
+          : `${selected.type}:${selected.id}`;
+      primaryIdx = sorted.findIndex((it) => `${it.type}:${it.id}` === key);
+      if (primaryIdx >= 0) primaryLine = span(sorted[primaryIdx]);
+    }
     const step = (end - start) / (sorted.length - 1 || 1);
+    const leftStep = primaryIdx > 0 ? (primaryLine - start) / primaryIdx : 0;
+    const rightStep =
+      primaryIdx >= 0 && primaryIdx < sorted.length - 1
+        ? (end - primaryLine) / (sorted.length - 1 - primaryIdx || 1)
+        : 0;
 
     const nextY = new Map<string, number>();
     for (let idx = 0; idx < sorted.length; idx++) {
       const it = sorted[idx];
-      const target = start + step * idx;
+      const target =
+        primaryIdx >= 0
+          ? idx <= primaryIdx
+            ? start + leftStep * idx
+            : primaryLine + rightStep * (idx - primaryIdx)
+          : start + step * idx;
       let y = it.y1;
       if (distributeModeY === 'start') y = target;
       else if (distributeModeY === 'end') y = target - it.h;
@@ -1818,9 +1958,11 @@ const DatacenterLayoutPage: React.FC = () => {
     });
   }, [
     cabinetD,
+    distributeAnchor,
     distributeModeY,
     gridStep,
     pushHistory,
+    selected,
     selection.cabinets,
     selection.zones,
     selection.facilities,
@@ -1896,38 +2038,48 @@ const DatacenterLayoutPage: React.FC = () => {
     ];
   }, []);
 
-  const onRotateSelected = useCallback(
+  const rotateSelection = useCallback(
     (delta: number) => {
-      if (!selected) return;
-      if (isLayerLocked(selected.type)) {
-        message.info('当前图层已锁定');
+      const cur = layoutRef.current;
+      if (!cur) return;
+      if (
+        (layers.lockCabinets && selection.cabinets.length) ||
+        (layers.lockZones && selection.zones.length) ||
+        (layers.lockFacilities && selection.facilities.length)
+      ) {
+        message.info('选中对象包含锁定图层，无法旋转');
         return;
       }
-      const before = layoutRef.current;
-      if (before) pushHistory(before);
-      if (selected.type === 'cabinet') {
-        const cur = selectedCabinetItem?.rotation || 0;
-        setCabinetItem(selected.cabinetId, { rotation: cur + delta });
-      }
-      if (selected.type === 'zone') {
-        const cur = selectedZone?.rotation || 0;
-        setZoneItem(selected.id, { rotation: cur + delta });
-      }
-      if (selected.type === 'facility') {
-        const cur = selectedFacility?.rotation || 0;
-        setFacilityItem(selected.id, { rotation: cur + delta });
-      }
+      if (!selectionCount) return;
+      pushHistory(cur);
+      setLayout({
+        ...cur,
+        cabinets: cur.cabinets.map((c) =>
+          selection.cabinets.includes(c.cabinetId)
+            ? { ...c, rotation: (c.rotation || 0) + delta }
+            : c,
+        ),
+        zones: cur.zones.map((z) =>
+          selection.zones.includes(z.id)
+            ? { ...z, rotation: (z.rotation || 0) + delta }
+            : z,
+        ),
+        facilities: cur.facilities.map((f) =>
+          selection.facilities.includes(f.id)
+            ? { ...f, rotation: (f.rotation || 0) + delta }
+            : f,
+        ),
+      });
     },
     [
-      selected,
-      selectedCabinetItem,
-      selectedZone,
-      selectedFacility,
-      setCabinetItem,
-      setZoneItem,
-      setFacilityItem,
+      layers.lockCabinets,
+      layers.lockFacilities,
+      layers.lockZones,
       pushHistory,
-      isLayerLocked,
+      selection.cabinets,
+      selection.facilities,
+      selection.zones,
+      selectionCount,
     ],
   );
 
@@ -2307,14 +2459,14 @@ const DatacenterLayoutPage: React.FC = () => {
               </Space>
               <Space wrap>
                 <Button
-                  onClick={() => onRotateSelected(-90)}
-                  disabled={!selected}
+                  onClick={() => rotateSelection(-90)}
+                  disabled={selectionCount === 0}
                 >
                   左转90°
                 </Button>
                 <Button
-                  onClick={() => onRotateSelected(90)}
-                  disabled={!selected}
+                  onClick={() => rotateSelection(90)}
+                  disabled={selectionCount === 0}
                 >
                   右转90°
                 </Button>
@@ -2358,6 +2510,17 @@ const DatacenterLayoutPage: React.FC = () => {
                 >
                   底对齐
                 </Button>
+              </Space>
+              <Space wrap style={{ alignItems: 'center' }}>
+                <Typography.Text type="secondary">分布锚点</Typography.Text>
+                <Segmented
+                  value={distributeAnchor}
+                  onChange={(v) => setDistributeAnchor(v as DistributeAnchor)}
+                  options={[
+                    { label: '固定两端', value: 'endpoints' },
+                    { label: '主选中', value: 'primary' },
+                  ]}
+                />
               </Space>
               <Space wrap>
                 <Button
@@ -2678,6 +2841,7 @@ const DatacenterLayoutPage: React.FC = () => {
                 }}
               />
             )}
+            {snapHint && <div className={styles.snapHint}>{snapHint}</div>}
             <div
               className={styles.viewport}
               style={viewportStyle}
