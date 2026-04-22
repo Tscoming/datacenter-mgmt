@@ -27,6 +27,14 @@
     #ffffff;
 }
 
+.selectBox {
+  position: absolute;
+  border: 1px dashed rgba(22, 119, 255, 0.8);
+  background: rgba(22, 119, 255, 0.08);
+  pointer-events: none;
+  z-index: 3;
+}
+
 .viewport {
   position: absolute;
   inset: 0;
@@ -68,6 +76,40 @@
   outline-offset: 2px;
 }
 
+.resizeHandle {
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  background: #ffffff;
+  border: 1px solid rgba(0, 0, 0, 0.35);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.18);
+}
+
+.resizeHandleNw {
+  left: -5px;
+  top: -5px;
+  cursor: nwse-resize;
+}
+
+.resizeHandleNe {
+  right: -5px;
+  top: -5px;
+  cursor: nesw-resize;
+}
+
+.resizeHandleSw {
+  left: -5px;
+  bottom: -5px;
+  cursor: nesw-resize;
+}
+
+.resizeHandleSe {
+  right: -5px;
+  bottom: -5px;
+  cursor: nwse-resize;
+}
+
 .facility {
   position: absolute;
   width: 34px;
@@ -86,4 +128,3 @@
   outline: 2px solid rgba(250, 173, 20, 0.95);
   outline-offset: 2px;
 }
-
