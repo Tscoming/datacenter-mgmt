@@ -216,6 +216,63 @@ declare namespace IDC {
     powerRatioAfter?: number;
   }
 
+  type LayoutZoneType =
+    | 'zone'
+    | 'hot_aisle'
+    | 'cold_aisle'
+    | 'restricted'
+    | 'other';
+
+  type LayoutFacilityType =
+    | 'ups'
+    | 'crac'
+    | 'pdu'
+    | 'sensor'
+    | 'door'
+    | 'camera'
+    | 'fire_extinguisher'
+    | 'other';
+
+  interface DatacenterLayoutCabinetItem {
+    cabinetId: string;
+    x: number;
+    y: number;
+    rotation?: number;
+  }
+
+  interface DatacenterLayoutZoneItem {
+    id: string;
+    type: LayoutZoneType;
+    name?: string;
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+    rotation?: number;
+    color?: string;
+  }
+
+  interface DatacenterLayoutFacilityItem {
+    id: string;
+    type: LayoutFacilityType;
+    name?: string;
+    x: number;
+    y: number;
+    rotation?: number;
+  }
+
+  interface DatacenterLayout {
+    datacenterId: string;
+    version: number;
+    canvasWidth: number;
+    canvasHeight: number;
+    pxPerMeter: number;
+    cabinets: DatacenterLayoutCabinetItem[];
+    zones: DatacenterLayoutZoneItem[];
+    facilities: DatacenterLayoutFacilityItem[];
+    updatedAt: string;
+  }
+
   // ==================== 端口 ====================
 
   /** VLAN配置 */

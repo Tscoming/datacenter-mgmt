@@ -1,0 +1,287 @@
+.layoutPage {
+  display: grid;
+  grid-template-columns: 320px 1fr;
+  gap: 16px;
+}
+
+.sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.toolModeGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(84px, 1fr));
+  gap: 10px;
+}
+
+.toolModeButton {
+  width: 100%;
+  height: 72px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 10px 8px;
+  flex-direction: column;
+  gap: 8px;
+  border-radius: 14px;
+  border-color: rgba(0, 0, 0, 0.12);
+}
+
+.toolModeButton :global(.ant-btn-icon) {
+  margin-inline-end: 0;
+  line-height: 0;
+  color: var(--tool-accent, rgba(0, 0, 0, 0.65));
+  transform: translateZ(0);
+}
+
+.toolModeLabel {
+  font-size: 12px;
+  line-height: 1.1;
+  text-align: center;
+  color: rgba(0, 0, 0, 0.85);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.toolModeButton:hover {
+  border-color: var(--tool-accent, rgba(0, 0, 0, 0.22));
+  box-shadow:
+    0 1px 0 rgba(0, 0, 0, 0.03),
+    0 8px 20px rgba(0, 0, 0, 0.06);
+}
+
+.toolModeActive {
+  border-color: var(--tool-accent);
+  background: var(--tool-accent-bg, rgba(22, 119, 255, 0.12));
+}
+
+.toolModeActive .toolModeLabel {
+  color: var(--tool-accent);
+  font-weight: 600;
+}
+
+.toolModeActive :global(.ant-btn-icon) {
+  color: var(--tool-accent);
+}
+
+.toolMode_select {
+  --tool-accent: #1677ff;
+  --tool-accent-bg: rgba(22, 119, 255, 0.14);
+}
+
+.toolMode_zone {
+  --tool-accent: #52c41a;
+  --tool-accent-bg: rgba(82, 196, 26, 0.14);
+}
+
+.toolMode_hot_aisle {
+  --tool-accent: #ff4d4f;
+  --tool-accent-bg: rgba(255, 77, 79, 0.14);
+}
+
+.toolMode_cold_aisle {
+  --tool-accent: #13c2c2;
+  --tool-accent-bg: rgba(19, 194, 194, 0.14);
+}
+
+.toolMode_ups {
+  --tool-accent: #722ed1;
+  --tool-accent-bg: rgba(114, 46, 209, 0.14);
+}
+
+.toolMode_crac {
+  --tool-accent: #2f54eb;
+  --tool-accent-bg: rgba(47, 84, 235, 0.14);
+}
+
+.toolMode_sensor {
+  --tool-accent: #faad14;
+  --tool-accent-bg: rgba(250, 173, 20, 0.16);
+}
+
+.toolMode_door {
+  --tool-accent: #595959;
+  --tool-accent-bg: rgba(89, 89, 89, 0.12);
+}
+
+.toolMode_camera {
+  --tool-accent: #eb2f96;
+  --tool-accent-bg: rgba(235, 47, 150, 0.14);
+}
+
+.toolMode_fire_extinguisher {
+  --tool-accent: #f5222d;
+  --tool-accent-bg: rgba(245, 34, 45, 0.14);
+}
+
+.toolIconGrid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.toolIconButton {
+  width: 100%;
+  height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.canvasCard {
+  height: calc(100vh - 180px);
+  min-height: 560px;
+}
+
+.canvasWrap {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  border-radius: 8px;
+  background:
+    linear-gradient(#f3f5f7 1px, transparent 1px) 0 0 / 50px 50px,
+    linear-gradient(90deg, #f3f5f7 1px, transparent 1px) 0 0 / 50px 50px,
+    #ffffff;
+}
+
+.selectBox {
+  position: absolute;
+  border: 1px dashed rgba(22, 119, 255, 0.8);
+  background: rgba(22, 119, 255, 0.08);
+  pointer-events: none;
+  z-index: 3;
+}
+
+.guideV {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: rgba(22, 119, 255, 0.65);
+  pointer-events: none;
+  z-index: 2;
+}
+
+.guideH {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: rgba(22, 119, 255, 0.65);
+  pointer-events: none;
+  z-index: 2;
+}
+
+.snapHint {
+  position: absolute;
+  left: 12px;
+  bottom: 12px;
+  z-index: 4;
+  max-width: 520px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.55);
+  color: rgba(255, 255, 255, 0.92);
+  font-size: 12px;
+  line-height: 1.4;
+  pointer-events: none;
+}
+
+.viewport {
+  position: absolute;
+  inset: 0;
+  transform-origin: 0 0;
+}
+
+.cabinet {
+  position: absolute;
+  width: 30px;
+  height: 50px;
+  border-radius: 6px;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  background: rgba(22, 119, 255, 0.16);
+  color: rgba(0, 0, 0, 0.88);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  user-select: none;
+  cursor: grab;
+}
+
+.cabinetSelected {
+  outline: 2px solid #1677ff;
+  outline-offset: 2px;
+  background: rgba(22, 119, 255, 0.22);
+}
+
+.zone {
+  position: absolute;
+  border-radius: 8px;
+  border: 1px dashed rgba(0, 0, 0, 0.28);
+  background: rgba(82, 196, 26, 0.12);
+  user-select: none;
+}
+
+.zoneSelected {
+  outline: 2px solid rgba(82, 196, 26, 0.9);
+  outline-offset: 2px;
+}
+
+.resizeHandle {
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  background: #ffffff;
+  border: 1px solid rgba(0, 0, 0, 0.35);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.18);
+}
+
+.resizeHandleNw {
+  left: -5px;
+  top: -5px;
+  cursor: nwse-resize;
+}
+
+.resizeHandleNe {
+  right: -5px;
+  top: -5px;
+  cursor: nesw-resize;
+}
+
+.resizeHandleSw {
+  left: -5px;
+  bottom: -5px;
+  cursor: nesw-resize;
+}
+
+.resizeHandleSe {
+  right: -5px;
+  bottom: -5px;
+  cursor: nwse-resize;
+}
+
+.facility {
+  position: absolute;
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  border: 1px solid rgba(0, 0, 0, 0.14);
+  background: rgba(0, 0, 0, 0.04);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: grab;
+  user-select: none;
+}
+
+.facilitySelected {
+  outline: 2px solid rgba(250, 173, 20, 0.95);
+  outline-offset: 2px;
+}
