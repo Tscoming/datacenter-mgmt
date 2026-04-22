@@ -52,6 +52,7 @@ export default {
   'menu.editor.koni': '拓扑编辑器',
   'menu.datacenter3d': '3D机房',
   'menu.resource-tree': '资源树',
+  'menu.layout': '机房布局',
   'menu.cabinet3d': '机柜3D',
   'menu.idc': '资源管理',
   'menu.idc.datacenter': '数据中心',

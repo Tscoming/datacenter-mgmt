@@ -91,6 +91,7 @@ interface CabinetProps {
   devices: IDC.Device[];
   templates: any[];
   position: [number, number, number];
+  rotationY?: number;
   selected: boolean;
   highlighted: boolean;
   onSelect: (cabinet: IDC.Cabinet) => void;
@@ -119,6 +120,7 @@ export const Cabinet3D: React.FC<CabinetProps> = ({
   devices,
   templates,
   position,
+  rotationY = 0,
   selected,
   highlighted,
   onSelect,
@@ -191,7 +193,7 @@ export const Cabinet3D: React.FC<CabinetProps> = ({
   };
 
   return (
-    <group ref={groupRef} position={position}>
+    <group ref={groupRef} position={position} rotation={[0, rotationY, 0]}>
       {/* 机柜框架 */}
       <mesh
         onClick={(e) => {
@@ -476,6 +478,7 @@ interface DatacenterSceneProps {
   devices: IDC.Device[];
   connections: IDC.Connection[];
   templates: any[];
+  layout?: IDC.DatacenterLayout;
   selectedCabinet: IDC.Cabinet | null;
   selectedDevice: IDC.Device | null;
   highlightedCabinetId: string | null;
@@ -510,6 +513,7 @@ export const DatacenterScene = forwardRef<
       devices,
       connections,
       templates,
+      layout,
       selectedCabinet,
       selectedDevice,
       highlightedCabinetId,
@@ -577,14 +581,26 @@ export const DatacenterScene = forwardRef<
       const colSpacing = 0.8;
 
       cabinets.forEach((cab) => {
-        const x = (cab.column - 1) * colSpacing;
+        const found = layout?.cabinets?.find((c) => c.cabinetId === cab.id);
+        const x = found ? found.x : (cab.column - 1) * colSpacing;
         const y = (cab.uHeight * 0.0445) / 2;
-        const z = (cab.row - 1) * rowSpacing;
+        const z = found ? found.y : (cab.row - 1) * rowSpacing;
         positions[cab.id] = [x, y, z];
       });
 
       return positions;
-    }, [cabinets]);
+    }, [cabinets, layout]);
+
+    const cabinetRotations = useMemo(() => {
+      const rotations: Record<string, number> = {};
+      cabinets.forEach((cab) => {
+        const found = layout?.cabinets?.find((c) => c.cabinetId === cab.id);
+        rotations[cab.id] = found?.rotation
+          ? (found.rotation * Math.PI) / 180
+          : 0;
+      });
+      return rotations;
+    }, [cabinets, layout]);
 
     // 获取机柜内的设备
     const getDevicesByCabinet = (cabinetId: string) => {
@@ -677,6 +693,36 @@ export const DatacenterScene = forwardRef<
           />
         </mesh>
 
+        {(layout?.zones || []).map((z) => {
+          const color =
+            z.color ||
+            (z.type === 'hot_aisle'
+              ? 'rgba(245,34,45,0.22)'
+              : z.type === 'cold_aisle'
+                ? 'rgba(22,119,255,0.18)'
+                : z.type === 'restricted'
+                  ? 'rgba(250,173,20,0.18)'
+                  : 'rgba(82,196,26,0.14)');
+          const rot = ((z.rotation || 0) * Math.PI) / 180;
+          return (
+            <mesh
+              key={z.id}
+              rotation={[-Math.PI / 2, rot, 0]}
+              position={[z.x + z.width / 2, -0.019, z.y + z.height / 2]}
+              receiveShadow
+            >
+              <planeGeometry args={[z.width, z.height]} />
+              <meshStandardMaterial
+                color={color as any}
+                transparent
+                opacity={0.35}
+                metalness={0}
+                roughness={1}
+              />
+            </mesh>
+          );
+        })}
+
         {/* 渲染机柜 - 使用性能优化配置 */}
         {cabinets.map((cabinet) => (
           <Cabinet3D
@@ -685,6 +731,7 @@ export const DatacenterScene = forwardRef<
             devices={getDevicesByCabinet(cabinet.id)}
             templates={templates}
             position={cabinetPositions[cabinet.id] || [0, 0, 0]}
+            rotationY={cabinetRotations[cabinet.id] || 0}
             selected={selectedCabinet?.id === cabinet.id}
             highlighted={
               highlightedCabinetId === cabinet.id ||

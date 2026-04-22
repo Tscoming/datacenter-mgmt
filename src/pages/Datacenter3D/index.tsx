@@ -63,6 +63,7 @@ import { getAllDatacenters } from '@/services/idc/datacenter';
 import { getDevices } from '@/services/idc/device';
 import { getAllDeviceTemplates } from '@/services/idc/deviceTemplate';
 import { getCabinetEnvironments } from '@/services/idc/environment';
+import { getDatacenterLayout } from '@/services/idc/layout';
 import { useBatchLoader, usePolling } from '@/utils/DataLoader';
 import styles from './index.less';
 
@@ -170,6 +171,8 @@ const Datacenter3DPage: React.FC = () => {
   const [connections, setConnections] = useState<IDC.Connection[]>([]);
   const [templates, setTemplates] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
+  const [datacenterLayout, setDatacenterLayout] =
+    useState<IDC.DatacenterLayout | null>(null);
 
   const [selectedCabinet, setSelectedCabinet] = useState<IDC.Cabinet | null>(
     null,
@@ -279,14 +282,34 @@ const Datacenter3DPage: React.FC = () => {
       Promise.all([
         getCabinetsByDatacenter(selectedDc),
         getConnectionsByDatacenter(selectedDc),
+        getDatacenterLayout(selectedDc),
       ])
-        .then(([cabRes, connRes]) => {
+        .then(([cabRes, connRes, layoutRes]) => {
           if (cabRes.success) setCabinets(cabRes.data || []);
           if (connRes.success) setConnections(connRes.data || []);
+          if (layoutRes.success) setDatacenterLayout(layoutRes.data || null);
         })
         .finally(() => setLoading(false));
     }
   }, [selectedDc]);
+
+  const cabinetBasePosition = useCallback(
+    (cabinet: IDC.Cabinet) => {
+      const found = datacenterLayout?.cabinets?.find(
+        (c) => c.cabinetId === cabinet.id,
+      );
+      if (found) {
+        return { x: found.x, z: found.y };
+      }
+      const rowSpacing = 1.5;
+      const colSpacing = 0.8;
+      return {
+        x: (cabinet.column - 1) * colSpacing,
+        z: (cabinet.row - 1) * rowSpacing,
+      };
+    },
+    [datacenterLayout],
+  );
 
   // 模拟并行的设备状态轮询更新 (每30秒)
   usePolling(
@@ -328,11 +351,10 @@ const Datacenter3DPage: React.FC = () => {
       // 聚焦到设备位置
       const cabinet = cabinets.find((c) => c.id === device.cabinetId);
       if (cabinet && sceneRef.current) {
-        const rowSpacing = 1.5;
-        const colSpacing = 0.8;
-        const x = (cabinet.column - 1) * colSpacing;
+        const base = cabinetBasePosition(cabinet);
+        const x = base.x;
         const y = device.startU * 0.0445;
-        const z = (cabinet.row - 1) * rowSpacing;
+        const z = base.z;
         sceneRef.current.focusOnPosition([x, y, z]);
       }
 
@@ -615,6 +637,7 @@ const Datacenter3DPage: React.FC = () => {
                     cabinets={cabinets}
                     devices={devices}
                     templates={templates}
+                    layout={datacenterLayout || undefined}
                     selectedCabinet={selectedCabinet}
                     selectedDevice={selectedDevice}
                     connections={showConnections ? connections : []}

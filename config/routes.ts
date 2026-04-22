@@ -41,6 +41,12 @@ export default [
     component: './ResourceTree',
   },
   {
+    path: '/layout',
+    name: 'layout',
+    icon: 'layout',
+    component: './DatacenterLayout',
+  },
+  {
     path: '/cabinet3d',
     name: 'cabinet3d',
     icon: 'appstore',

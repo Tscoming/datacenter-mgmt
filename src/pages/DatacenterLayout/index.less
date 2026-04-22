@@ -1,0 +1,89 @@
+.layoutPage {
+  display: grid;
+  grid-template-columns: 320px 1fr;
+  gap: 16px;
+}
+
+.sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.canvasCard {
+  height: calc(100vh - 180px);
+  min-height: 560px;
+}
+
+.canvasWrap {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  border-radius: 8px;
+  background:
+    linear-gradient(#f3f5f7 1px, transparent 1px) 0 0 / 50px 50px,
+    linear-gradient(90deg, #f3f5f7 1px, transparent 1px) 0 0 / 50px 50px,
+    #ffffff;
+}
+
+.viewport {
+  position: absolute;
+  inset: 0;
+  transform-origin: 0 0;
+}
+
+.cabinet {
+  position: absolute;
+  width: 30px;
+  height: 50px;
+  border-radius: 6px;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  background: rgba(22, 119, 255, 0.16);
+  color: rgba(0, 0, 0, 0.88);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  user-select: none;
+  cursor: grab;
+}
+
+.cabinetSelected {
+  outline: 2px solid #1677ff;
+  outline-offset: 2px;
+  background: rgba(22, 119, 255, 0.22);
+}
+
+.zone {
+  position: absolute;
+  border-radius: 8px;
+  border: 1px dashed rgba(0, 0, 0, 0.28);
+  background: rgba(82, 196, 26, 0.12);
+  user-select: none;
+}
+
+.zoneSelected {
+  outline: 2px solid rgba(82, 196, 26, 0.9);
+  outline-offset: 2px;
+}
+
+.facility {
+  position: absolute;
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  border: 1px solid rgba(0, 0, 0, 0.14);
+  background: rgba(0, 0, 0, 0.04);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: grab;
+  user-select: none;
+}
+
+.facilitySelected {
+  outline: 2px solid rgba(250, 173, 20, 0.95);
+  outline-offset: 2px;
+}
+

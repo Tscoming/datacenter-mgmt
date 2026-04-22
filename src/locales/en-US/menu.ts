@@ -52,6 +52,7 @@ export default {
   'menu.editor.koni': 'Koni Editor',
   'menu.datacenter3d': '3D Data Center',
   'menu.resource-tree': 'Resource Tree',
+  'menu.layout': 'Datacenter Layout',
   'menu.cabinet3d': 'Cabinet 3D',
   'menu.idc': 'Resource Management',
   'menu.idc.datacenter': 'Data Center',

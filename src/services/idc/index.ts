@@ -6,3 +6,4 @@ export * from './device';
 export * from './connection';
 export * from './port';
 export * from './dashboard';
+export * from './layout';
