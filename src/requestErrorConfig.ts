@@ -2,6 +2,11 @@ import type { RequestOptions } from '@@/plugin-request/request';
 import type { RequestConfig } from '@umijs/max';
 import { history } from '@umijs/max';
 import { message, notification } from 'antd';
+import {
+  clearSession,
+  ensureValidSession,
+  getAccessToken,
+} from '@/utils/session';
 
 // 错误处理方案： 错误类型
 enum ErrorShowType {
@@ -21,16 +26,6 @@ interface ResponseStructure {
 }
 
 const loginPath = '/user/login';
-
-function getToken(): string | null {
-  if (typeof window === 'undefined') return null;
-  return localStorage.getItem('token');
-}
-
-function clearToken(): void {
-  if (typeof window === 'undefined') return;
-  localStorage.removeItem('token');
-}
 
 function redirectToLogin(): void {
   const currentPath = history.location.pathname + history.location.search;
@@ -83,7 +78,7 @@ export const errorConfig: RequestConfig = {
               });
               break;
             case ErrorShowType.REDIRECT:
-              clearToken();
+              clearSession();
               redirectToLogin();
               return;
             default:
@@ -93,7 +88,7 @@ export const errorConfig: RequestConfig = {
       } else if (error.response) {
         const status = error.response.status;
         if (status === 401) {
-          clearToken();
+          clearSession();
           redirectToLogin();
           return;
         }
@@ -127,9 +122,9 @@ export const errorConfig: RequestConfig = {
 
   // 请求拦截器
   requestInterceptors: [
-    (config: RequestOptions) => {
-      // 拦截请求配置，进行个性化处理。
-      const token = getToken();
+    async (config: RequestOptions) => {
+      await ensureValidSession();
+      const token = getAccessToken();
       const headers = config?.headers || {};
       if (token) {
         headers['Authorization'] = `Bearer ${token}`;

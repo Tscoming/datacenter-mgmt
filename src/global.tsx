@@ -1,9 +1,12 @@
 import { useIntl } from '@umijs/max';
 import { Button, message, notification } from 'antd';
 import defaultSettings from '../config/defaultSettings';
+import { initSessionSync } from './utils/session';
 
 const { pwa } = defaultSettings;
 const isHttps = document.location.protocol === 'https:';
+
+initSessionSync();
 
 const clearCache = () => {
   // remove all caches

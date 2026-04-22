@@ -26,6 +26,7 @@ import { flushSync } from 'react-dom';
 import { Footer } from '@/components';
 import { login } from '@/services/ant-design-pro/api';
 import { getFakeCaptcha } from '@/services/ant-design-pro/login';
+import { setSession } from '@/utils/session';
 import Settings from '../../../../config/defaultSettings';
 
 const useStyles = createStyles(({ token }) => {
@@ -136,7 +137,11 @@ const Login: React.FC = () => {
       const msg = await login({ ...values, type });
       if (msg.status === 'ok') {
         const token = (msg as any).token;
-        if (token) {
+        const refreshToken = (msg as any).refreshToken;
+        const expiresAt = (msg as any).expiresAt;
+        if (token && refreshToken && expiresAt) {
+          setSession({ token, refreshToken, expiresAt });
+        } else if (token) {
           localStorage.setItem('token', token);
         }
         const defaultLoginSuccessMessage = intl.formatMessage({
