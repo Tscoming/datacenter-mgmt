@@ -69,6 +69,8 @@ type SelectionState = {
   facilities: string[];
 };
 
+type DistributeMode = 'start' | 'center' | 'end';
+
 function clamp(n: number, min: number, max: number) {
   return Math.max(min, Math.min(max, n));
 }
@@ -220,6 +222,10 @@ const DatacenterLayoutPage: React.FC = () => {
     lockZones: false,
     lockFacilities: false,
   });
+  const [distributeModeX, setDistributeModeX] =
+    useState<DistributeMode>('center');
+  const [distributeModeY, setDistributeModeY] =
+    useState<DistributeMode>('center');
 
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const layoutRef = useRef<IDC.DatacenterLayout | null>(null);
@@ -1620,29 +1626,67 @@ const DatacenterLayoutPage: React.FC = () => {
     const items: {
       type: 'cabinet' | 'zone' | 'facility';
       id: string;
-      x: number;
+      x1: number;
+      x2: number;
+      w: number;
     }[] = [];
     selection.cabinets.forEach((id) => {
       const c = cur.cabinets.find((x) => x.cabinetId === id);
-      if (c) items.push({ type: 'cabinet', id, x: c.x });
+      if (!c) return;
+      items.push({
+        type: 'cabinet',
+        id,
+        x1: c.x,
+        x2: c.x + cabinetW,
+        w: cabinetW,
+      });
     });
     selection.zones.forEach((id) => {
       const z = cur.zones.find((x) => x.id === id);
-      if (z) items.push({ type: 'zone', id, x: z.x });
+      if (!z) return;
+      items.push({
+        type: 'zone',
+        id,
+        x1: z.x,
+        x2: z.x + z.width,
+        w: z.width,
+      });
     });
     selection.facilities.forEach((id) => {
       const f = cur.facilities.find((x) => x.id === id);
-      if (f) items.push({ type: 'facility', id, x: f.x });
+      if (!f) return;
+      items.push({
+        type: 'facility',
+        id,
+        x1: f.x,
+        x2: f.x,
+        w: 0,
+      });
     });
     if (items.length < 3) return;
-    const sorted = [...items].sort((a, b) => a.x - b.x);
-    const minX = sorted[0].x;
-    const maxX = sorted[sorted.length - 1].x;
-    const step = (maxX - minX) / (sorted.length - 1 || 1);
+    const sorted = [...items].sort((a, b) => a.x1 - b.x1);
+    const first = sorted[0];
+    const last = sorted[sorted.length - 1];
+
+    const span = (d: { x1: number; x2: number; w: number }) => {
+      if (distributeModeX === 'start') return d.x1;
+      if (distributeModeX === 'end') return d.x2;
+      return d.x1 + d.w / 2;
+    };
+
+    const start = span(first);
+    const end = span(last);
+    const step = (end - start) / (sorted.length - 1 || 1);
+
     const nextX = new Map<string, number>();
     for (let idx = 0; idx < sorted.length; idx++) {
       const it = sorted[idx];
-      nextX.set(`${it.type}:${it.id}`, minX + step * idx);
+      const target = start + step * idx;
+      let x = it.x1;
+      if (distributeModeX === 'start') x = target;
+      else if (distributeModeX === 'end') x = target - it.w;
+      else x = target - it.w / 2;
+      nextX.set(`${it.type}:${it.id}`, snapEnabled ? snap(x, gridStep) : x);
     }
     pushHistory(cur);
     setLayout({
@@ -1664,6 +1708,9 @@ const DatacenterLayoutPage: React.FC = () => {
       }),
     });
   }, [
+    cabinetW,
+    gridStep,
+    distributeModeX,
     pushHistory,
     selection.cabinets,
     selection.zones,
@@ -1671,6 +1718,7 @@ const DatacenterLayoutPage: React.FC = () => {
     layers.lockCabinets,
     layers.lockFacilities,
     layers.lockZones,
+    snapEnabled,
   ]);
 
   const distributeSelectionVertical = useCallback(() => {
@@ -1687,29 +1735,67 @@ const DatacenterLayoutPage: React.FC = () => {
     const items: {
       type: 'cabinet' | 'zone' | 'facility';
       id: string;
-      y: number;
+      y1: number;
+      y2: number;
+      h: number;
     }[] = [];
     selection.cabinets.forEach((id) => {
       const c = cur.cabinets.find((x) => x.cabinetId === id);
-      if (c) items.push({ type: 'cabinet', id, y: c.y });
+      if (!c) return;
+      items.push({
+        type: 'cabinet',
+        id,
+        y1: c.y,
+        y2: c.y + cabinetD,
+        h: cabinetD,
+      });
     });
     selection.zones.forEach((id) => {
       const z = cur.zones.find((x) => x.id === id);
-      if (z) items.push({ type: 'zone', id, y: z.y });
+      if (!z) return;
+      items.push({
+        type: 'zone',
+        id,
+        y1: z.y,
+        y2: z.y + z.height,
+        h: z.height,
+      });
     });
     selection.facilities.forEach((id) => {
       const f = cur.facilities.find((x) => x.id === id);
-      if (f) items.push({ type: 'facility', id, y: f.y });
+      if (!f) return;
+      items.push({
+        type: 'facility',
+        id,
+        y1: f.y,
+        y2: f.y,
+        h: 0,
+      });
     });
     if (items.length < 3) return;
-    const sorted = [...items].sort((a, b) => a.y - b.y);
-    const minY = sorted[0].y;
-    const maxY = sorted[sorted.length - 1].y;
-    const step = (maxY - minY) / (sorted.length - 1 || 1);
+    const sorted = [...items].sort((a, b) => a.y1 - b.y1);
+    const first = sorted[0];
+    const last = sorted[sorted.length - 1];
+
+    const span = (d: { y1: number; y2: number; h: number }) => {
+      if (distributeModeY === 'start') return d.y1;
+      if (distributeModeY === 'end') return d.y2;
+      return d.y1 + d.h / 2;
+    };
+
+    const start = span(first);
+    const end = span(last);
+    const step = (end - start) / (sorted.length - 1 || 1);
+
     const nextY = new Map<string, number>();
     for (let idx = 0; idx < sorted.length; idx++) {
       const it = sorted[idx];
-      nextY.set(`${it.type}:${it.id}`, minY + step * idx);
+      const target = start + step * idx;
+      let y = it.y1;
+      if (distributeModeY === 'start') y = target;
+      else if (distributeModeY === 'end') y = target - it.h;
+      else y = target - it.h / 2;
+      nextY.set(`${it.type}:${it.id}`, snapEnabled ? snap(y, gridStep) : y);
     }
     pushHistory(cur);
     setLayout({
@@ -1731,6 +1817,9 @@ const DatacenterLayoutPage: React.FC = () => {
       }),
     });
   }, [
+    cabinetD,
+    distributeModeY,
+    gridStep,
     pushHistory,
     selection.cabinets,
     selection.zones,
@@ -1738,6 +1827,7 @@ const DatacenterLayoutPage: React.FC = () => {
     layers.lockCabinets,
     layers.lockFacilities,
     layers.lockZones,
+    snapEnabled,
   ]);
 
   const autoLayout = useCallback(() => {
@@ -2276,12 +2366,30 @@ const DatacenterLayoutPage: React.FC = () => {
                 >
                   水平等距
                 </Button>
+                <Segmented
+                  value={distributeModeX}
+                  onChange={(v) => setDistributeModeX(v as DistributeMode)}
+                  options={[
+                    { label: '按左', value: 'start' },
+                    { label: '按中', value: 'center' },
+                    { label: '按右', value: 'end' },
+                  ]}
+                />
                 <Button
                   onClick={distributeSelectionVertical}
                   disabled={selectionCount < 3}
                 >
                   垂直等距
                 </Button>
+                <Segmented
+                  value={distributeModeY}
+                  onChange={(v) => setDistributeModeY(v as DistributeMode)}
+                  options={[
+                    { label: '按上', value: 'start' },
+                    { label: '按中', value: 'center' },
+                    { label: '按下', value: 'end' },
+                  ]}
+                />
               </Space>
             </Space>
           </Card>
