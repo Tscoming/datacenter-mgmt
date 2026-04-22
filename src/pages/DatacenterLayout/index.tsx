@@ -179,6 +179,14 @@ const DatacenterLayoutPage: React.FC = () => {
     height: number;
   } | null>(null);
   const [guides, setGuides] = useState<{ x?: number; y?: number } | null>(null);
+  const [layers, setLayers] = useState({
+    showCabinets: true,
+    showZones: true,
+    showFacilities: true,
+    lockCabinets: false,
+    lockZones: false,
+    lockFacilities: false,
+  });
 
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const layoutRef = useRef<IDC.DatacenterLayout | null>(null);
@@ -228,6 +236,21 @@ const DatacenterLayoutPage: React.FC = () => {
   useEffect(() => {
     layoutRef.current = layout;
   }, [layout]);
+
+  useEffect(() => {
+    setSelection((prev) => ({
+      cabinets: layers.showCabinets ? prev.cabinets : [],
+      zones: layers.showZones ? prev.zones : [],
+      facilities: layers.showFacilities ? prev.facilities : [],
+    }));
+    setSelected((prev) => {
+      if (!prev) return prev;
+      if (prev.type === 'cabinet' && !layers.showCabinets) return null;
+      if (prev.type === 'zone' && !layers.showZones) return null;
+      if (prev.type === 'facility' && !layers.showFacilities) return null;
+      return prev;
+    });
+  }, [layers.showCabinets, layers.showFacilities, layers.showZones]);
 
   useEffect(() => {
     getAllDatacenters().then((res) => {
@@ -471,6 +494,15 @@ const DatacenterLayoutPage: React.FC = () => {
     selection.zones.length +
     selection.facilities.length;
 
+  const isLayerLocked = useCallback(
+    (type: Selected['type']) => {
+      if (type === 'cabinet') return layers.lockCabinets;
+      if (type === 'zone') return layers.lockZones;
+      return layers.lockFacilities;
+    },
+    [layers.lockCabinets, layers.lockFacilities, layers.lockZones],
+  );
+
   const buildSnapshot = useCallback(() => {
     const cur = layoutRef.current;
     if (!cur) {
@@ -516,6 +548,14 @@ const DatacenterLayoutPage: React.FC = () => {
             : 'zone';
 
         if (tool === 'zone' || tool === 'hot_aisle' || tool === 'cold_aisle') {
+          if (!layers.showZones) {
+            message.info('区域图层已隐藏');
+            return;
+          }
+          if (layers.lockZones) {
+            message.info('区域图层已锁定');
+            return;
+          }
           const before = layoutRef.current;
           if (before) pushHistory(before);
           const pos = toWorld(e.clientX, e.clientY);
@@ -553,6 +593,14 @@ const DatacenterLayoutPage: React.FC = () => {
 
         const before = layoutRef.current;
         if (before) pushHistory(before);
+        if (!layers.showFacilities) {
+          message.info('设施图层已隐藏');
+          return;
+        }
+        if (layers.lockFacilities) {
+          message.info('设施图层已锁定');
+          return;
+        }
         const pos = toWorld(e.clientX, e.clientY);
         const id = uid('facility');
         setSelectionOnly({ type: 'facility', id });
@@ -613,6 +661,10 @@ const DatacenterLayoutPage: React.FC = () => {
       pushHistory,
       snapEnabled,
       setSelectionOnly,
+      layers.lockFacilities,
+      layers.lockZones,
+      layers.showFacilities,
+      layers.showZones,
     ],
   );
 
@@ -1056,19 +1108,27 @@ const DatacenterLayoutPage: React.FC = () => {
             Math.max(ax1, x1) <= Math.min(ax2, x2) &&
             Math.max(ay1, y1) <= Math.min(ay2, y2);
 
-          const selectedCabinets = cabinetItems
-            .filter((ci) =>
-              intersects(ci.x, ci.y, ci.x + cabinetW, ci.y + cabinetD),
-            )
-            .map((ci) => ci.cabinetId);
-          const selectedZones = cur.zones
-            .filter((z) => intersects(z.x, z.y, z.x + z.width, z.y + z.height))
-            .map((z) => z.id);
-          const selectedFacilities = cur.facilities
-            .filter((f) =>
-              intersects(f.x - 0.4, f.y - 0.4, f.x + 0.4, f.y + 0.4),
-            )
-            .map((f) => f.id);
+          const selectedCabinets = layers.showCabinets
+            ? cabinetItems
+                .filter((ci) =>
+                  intersects(ci.x, ci.y, ci.x + cabinetW, ci.y + cabinetD),
+                )
+                .map((ci) => ci.cabinetId)
+            : [];
+          const selectedZones = layers.showZones
+            ? cur.zones
+                .filter((z) =>
+                  intersects(z.x, z.y, z.x + z.width, z.y + z.height),
+                )
+                .map((z) => z.id)
+            : [];
+          const selectedFacilities = layers.showFacilities
+            ? cur.facilities
+                .filter((f) =>
+                  intersects(f.x - 0.4, f.y - 0.4, f.x + 0.4, f.y + 0.4),
+                )
+                .map((f) => f.id)
+            : [];
 
           setSelection({
             cabinets: selectedCabinets,
@@ -1095,7 +1155,16 @@ const DatacenterLayoutPage: React.FC = () => {
         (e.currentTarget as HTMLDivElement).releasePointerCapture(e.pointerId);
       } catch {}
     },
-    [pushHistory, toWorld, cabinetItems, cabinetW, cabinetD],
+    [
+      pushHistory,
+      toWorld,
+      cabinetItems,
+      cabinetW,
+      cabinetD,
+      layers.showCabinets,
+      layers.showFacilities,
+      layers.showZones,
+    ],
   );
 
   const onWheel = useCallback(
@@ -1290,6 +1359,14 @@ const DatacenterLayoutPage: React.FC = () => {
   const alignSelectionLeft = useCallback(() => {
     const cur = layoutRef.current;
     if (!cur) return;
+    if (
+      (layers.lockCabinets && selection.cabinets.length) ||
+      (layers.lockZones && selection.zones.length) ||
+      (layers.lockFacilities && selection.facilities.length)
+    ) {
+      message.info('选中对象包含锁定图层，无法对齐');
+      return;
+    }
     const ids = [
       ...selection.cabinets.map((id) => ({ type: 'cabinet' as const, id })),
       ...selection.zones.map((id) => ({ type: 'zone' as const, id })),
@@ -1326,11 +1403,27 @@ const DatacenterLayoutPage: React.FC = () => {
         selection.facilities.includes(f.id) ? { ...f, x: target } : f,
       ),
     });
-  }, [pushHistory, selection.cabinets, selection.zones, selection.facilities]);
+  }, [
+    pushHistory,
+    selection.cabinets,
+    selection.zones,
+    selection.facilities,
+    layers.lockCabinets,
+    layers.lockFacilities,
+    layers.lockZones,
+  ]);
 
   const alignSelectionTop = useCallback(() => {
     const cur = layoutRef.current;
     if (!cur) return;
+    if (
+      (layers.lockCabinets && selection.cabinets.length) ||
+      (layers.lockZones && selection.zones.length) ||
+      (layers.lockFacilities && selection.facilities.length)
+    ) {
+      message.info('选中对象包含锁定图层，无法对齐');
+      return;
+    }
     const ids = [
       ...selection.cabinets.map((id) => ({ type: 'cabinet' as const, id })),
       ...selection.zones.map((id) => ({ type: 'zone' as const, id })),
@@ -1367,11 +1460,27 @@ const DatacenterLayoutPage: React.FC = () => {
         selection.facilities.includes(f.id) ? { ...f, y: target } : f,
       ),
     });
-  }, [pushHistory, selection.cabinets, selection.zones, selection.facilities]);
+  }, [
+    pushHistory,
+    selection.cabinets,
+    selection.zones,
+    selection.facilities,
+    layers.lockCabinets,
+    layers.lockFacilities,
+    layers.lockZones,
+  ]);
 
   const distributeSelectionHorizontal = useCallback(() => {
     const cur = layoutRef.current;
     if (!cur) return;
+    if (
+      (layers.lockCabinets && selection.cabinets.length) ||
+      (layers.lockZones && selection.zones.length) ||
+      (layers.lockFacilities && selection.facilities.length)
+    ) {
+      message.info('选中对象包含锁定图层，无法分布');
+      return;
+    }
     const items: {
       type: 'cabinet' | 'zone' | 'facility';
       id: string;
@@ -1418,11 +1527,27 @@ const DatacenterLayoutPage: React.FC = () => {
         return typeof x === 'number' ? { ...f, x } : f;
       }),
     });
-  }, [pushHistory, selection.cabinets, selection.zones, selection.facilities]);
+  }, [
+    pushHistory,
+    selection.cabinets,
+    selection.zones,
+    selection.facilities,
+    layers.lockCabinets,
+    layers.lockFacilities,
+    layers.lockZones,
+  ]);
 
   const distributeSelectionVertical = useCallback(() => {
     const cur = layoutRef.current;
     if (!cur) return;
+    if (
+      (layers.lockCabinets && selection.cabinets.length) ||
+      (layers.lockZones && selection.zones.length) ||
+      (layers.lockFacilities && selection.facilities.length)
+    ) {
+      message.info('选中对象包含锁定图层，无法分布');
+      return;
+    }
     const items: {
       type: 'cabinet' | 'zone' | 'facility';
       id: string;
@@ -1469,7 +1594,15 @@ const DatacenterLayoutPage: React.FC = () => {
         return typeof y === 'number' ? { ...f, y } : f;
       }),
     });
-  }, [pushHistory, selection.cabinets, selection.zones, selection.facilities]);
+  }, [
+    pushHistory,
+    selection.cabinets,
+    selection.zones,
+    selection.facilities,
+    layers.lockCabinets,
+    layers.lockFacilities,
+    layers.lockZones,
+  ]);
 
   const autoLayout = useCallback(() => {
     if (!layout) return;
@@ -1540,6 +1673,10 @@ const DatacenterLayoutPage: React.FC = () => {
   const onRotateSelected = useCallback(
     (delta: number) => {
       if (!selected) return;
+      if (isLayerLocked(selected.type)) {
+        message.info('当前图层已锁定');
+        return;
+      }
       const before = layoutRef.current;
       if (before) pushHistory(before);
       if (selected.type === 'cabinet') {
@@ -1564,15 +1701,24 @@ const DatacenterLayoutPage: React.FC = () => {
       setZoneItem,
       setFacilityItem,
       pushHistory,
+      isLayerLocked,
     ],
   );
 
   const onDeleteSelected = useCallback(() => {
     if (!layout) return;
+    if (layers.lockZones && layers.lockFacilities) {
+      message.info('区域/设施图层已锁定');
+      return;
+    }
     const before = layoutRef.current;
     if (before) pushHistory(before);
-    const zonesToDelete = new Set(selection.zones);
-    const facilitiesToDelete = new Set(selection.facilities);
+    const zonesToDelete = layers.lockZones
+      ? new Set<string>()
+      : new Set(selection.zones);
+    const facilitiesToDelete = layers.lockFacilities
+      ? new Set<string>()
+      : new Set(selection.facilities);
     if (!zonesToDelete.size && !facilitiesToDelete.size) {
       message.info('机柜不支持删除（请在机柜管理中删除）');
       return;
@@ -1593,6 +1739,8 @@ const DatacenterLayoutPage: React.FC = () => {
     selection.cabinets,
     selection.zones,
     selection.facilities,
+    layers.lockFacilities,
+    layers.lockZones,
   ]);
 
   const infoText = useMemo(() => {
@@ -1663,6 +1811,7 @@ const DatacenterLayoutPage: React.FC = () => {
         key === 'arrowleft' ||
         key === 'arrowright';
       if (!moveKey || !selected) return;
+      if (isLayerLocked(selected.type)) return;
 
       e.preventDefault();
       const step = e.shiftKey ? gridStep * 10 : gridStep;
@@ -1724,6 +1873,7 @@ const DatacenterLayoutPage: React.FC = () => {
     snapEnabled,
     pushHistory,
     setSelectionOnly,
+    isLayerLocked,
     setCabinetItem,
     setZoneItem,
     setFacilityItem,
@@ -1781,7 +1931,7 @@ const DatacenterLayoutPage: React.FC = () => {
                 showIcon
                 message={
                   tool === 'select'
-                    ? '拖拽物体移动；Shift+点击多选；Shift+拖拽框选；拖拽空白区域平移；滚轮缩放'
+                    ? '拖拽物体移动；Shift+点击多选；Shift+拖拽框选；拖拽空白区域平移；滚轮缩放；图层锁定可防止误移动'
                     : '在画布空白处点击/拖拽创建或放置'
                 }
               />
@@ -1845,6 +1995,82 @@ const DatacenterLayoutPage: React.FC = () => {
                     setGridStep(Math.max(0.05, Number(v || 0.1)))
                   }
                 />
+              </Space>
+              <Divider style={{ margin: '12px 0' }} />
+              <Space direction="vertical" style={{ width: '100%' }}>
+                <Typography.Text type="secondary">图层</Typography.Text>
+                <Space
+                  wrap
+                  style={{ justifyContent: 'space-between', width: '100%' }}
+                >
+                  <Typography.Text>机柜</Typography.Text>
+                  <Space>
+                    <Tooltip title="显示/隐藏">
+                      <Switch
+                        checked={layers.showCabinets}
+                        onChange={(v) =>
+                          setLayers((p) => ({ ...p, showCabinets: v }))
+                        }
+                      />
+                    </Tooltip>
+                    <Tooltip title="锁定（禁止移动/旋转/键盘微调）">
+                      <Switch
+                        checked={layers.lockCabinets}
+                        onChange={(v) =>
+                          setLayers((p) => ({ ...p, lockCabinets: v }))
+                        }
+                      />
+                    </Tooltip>
+                  </Space>
+                </Space>
+                <Space
+                  wrap
+                  style={{ justifyContent: 'space-between', width: '100%' }}
+                >
+                  <Typography.Text>区域</Typography.Text>
+                  <Space>
+                    <Tooltip title="显示/隐藏">
+                      <Switch
+                        checked={layers.showZones}
+                        onChange={(v) =>
+                          setLayers((p) => ({ ...p, showZones: v }))
+                        }
+                      />
+                    </Tooltip>
+                    <Tooltip title="锁定（禁止移动/缩放/旋转）">
+                      <Switch
+                        checked={layers.lockZones}
+                        onChange={(v) =>
+                          setLayers((p) => ({ ...p, lockZones: v }))
+                        }
+                      />
+                    </Tooltip>
+                  </Space>
+                </Space>
+                <Space
+                  wrap
+                  style={{ justifyContent: 'space-between', width: '100%' }}
+                >
+                  <Typography.Text>设施</Typography.Text>
+                  <Space>
+                    <Tooltip title="显示/隐藏">
+                      <Switch
+                        checked={layers.showFacilities}
+                        onChange={(v) =>
+                          setLayers((p) => ({ ...p, showFacilities: v }))
+                        }
+                      />
+                    </Tooltip>
+                    <Tooltip title="锁定（禁止移动/旋转）">
+                      <Switch
+                        checked={layers.lockFacilities}
+                        onChange={(v) =>
+                          setLayers((p) => ({ ...p, lockFacilities: v }))
+                        }
+                      />
+                    </Tooltip>
+                  </Space>
+                </Space>
               </Space>
               <Divider style={{ margin: '12px 0' }} />
               <Space wrap>
@@ -2185,317 +2411,342 @@ const DatacenterLayoutPage: React.FC = () => {
               style={viewportStyle}
               data-role="canvas"
             >
-              {zones.map((z) => {
-                const left = z.x * pxPerMeter;
-                const top = z.y * pxPerMeter;
-                const width = z.width * pxPerMeter;
-                const height = z.height * pxPerMeter;
-                const isSelected = selection.zones.includes(z.id);
-                const isPrimary =
-                  selected?.type === 'zone' && selected.id === z.id;
-                return (
-                  <div
-                    key={z.id}
-                    className={`${styles.zone} ${isSelected ? styles.zoneSelected : ''}`}
-                    style={{
-                      left,
-                      top,
-                      width,
-                      height,
-                      background: z.color || ZONE_COLORS[z.type],
-                      transform: `rotate(${z.rotation || 0}deg)`,
-                      transformOrigin: 'center',
-                    }}
-                    onPointerDown={(e) => {
-                      e.stopPropagation();
-                      if (e.shiftKey) {
-                        toggleSelection({ type: 'zone', id: z.id });
-                        return;
-                      }
-
-                      const inSelection = selection.zones.includes(z.id);
-                      if (!inSelection) {
-                        setSelectionOnly({ type: 'zone', id: z.id });
-                      } else {
-                        setSelected({ type: 'zone', id: z.id });
-                      }
-
-                      const snapshot =
-                        selectionCount > 1 && inSelection
-                          ? buildSnapshot()
-                          : undefined;
-                      dragRef.current = {
-                        kind: 'zone',
-                        id: z.id,
-                        startClientX: e.clientX,
-                        startClientY: e.clientY,
-                        startOffsetX: offset.x,
-                        startOffsetY: offset.y,
-                        startX: z.x,
-                        startY: z.y,
-                        snapshot,
-                        beforeLayout: layoutRef.current
-                          ? cloneLayout(layoutRef.current)
-                          : undefined,
-                      };
-                      (wrapRef.current as HTMLDivElement).setPointerCapture(
-                        e.pointerId,
-                      );
-                    }}
-                  >
+              {layers.showZones &&
+                zones.map((z) => {
+                  const left = z.x * pxPerMeter;
+                  const top = z.y * pxPerMeter;
+                  const width = z.width * pxPerMeter;
+                  const height = z.height * pxPerMeter;
+                  const isSelected = selection.zones.includes(z.id);
+                  const isPrimary =
+                    selected?.type === 'zone' && selected.id === z.id;
+                  return (
                     <div
+                      key={z.id}
+                      className={`${styles.zone} ${isSelected ? styles.zoneSelected : ''}`}
                       style={{
-                        padding: 8,
-                        fontSize: 12,
-                        color: 'rgba(0,0,0,0.75)',
+                        left,
+                        top,
+                        width,
+                        height,
+                        background: z.color || ZONE_COLORS[z.type],
+                        transform: `rotate(${z.rotation || 0}deg)`,
+                        transformOrigin: 'center',
+                        opacity: layers.lockZones ? 0.7 : 1,
+                      }}
+                      onPointerDown={(e) => {
+                        e.stopPropagation();
+                        if (e.shiftKey) {
+                          toggleSelection({ type: 'zone', id: z.id });
+                          return;
+                        }
+
+                        const inSelection = selection.zones.includes(z.id);
+                        if (!inSelection) {
+                          setSelectionOnly({ type: 'zone', id: z.id });
+                        } else {
+                          setSelected({ type: 'zone', id: z.id });
+                        }
+
+                        if (layers.lockZones) {
+                          message.info('区域图层已锁定');
+                          return;
+                        }
+
+                        const snapshot =
+                          selectionCount > 1 && inSelection
+                            ? buildSnapshot()
+                            : undefined;
+                        dragRef.current = {
+                          kind: 'zone',
+                          id: z.id,
+                          startClientX: e.clientX,
+                          startClientY: e.clientY,
+                          startOffsetX: offset.x,
+                          startOffsetY: offset.y,
+                          startX: z.x,
+                          startY: z.y,
+                          snapshot,
+                          beforeLayout: layoutRef.current
+                            ? cloneLayout(layoutRef.current)
+                            : undefined,
+                        };
+                        (wrapRef.current as HTMLDivElement).setPointerCapture(
+                          e.pointerId,
+                        );
                       }}
                     >
-                      {z.name || zoneLabel(z.type)}
+                      <div
+                        style={{
+                          padding: 8,
+                          fontSize: 12,
+                          color: 'rgba(0,0,0,0.75)',
+                        }}
+                      >
+                        {z.name || zoneLabel(z.type)}
+                      </div>
+                      {isPrimary && (
+                        <>
+                          <div
+                            className={`${styles.resizeHandle} ${styles.resizeHandleNw}`}
+                            onPointerDown={(e) => {
+                              e.stopPropagation();
+                              if (layers.lockZones) return;
+                              const before = layoutRef.current;
+                              dragRef.current = {
+                                kind: 'zone_resize',
+                                id: z.id,
+                                corner: 'nw',
+                                startClientX: e.clientX,
+                                startClientY: e.clientY,
+                                startOffsetX: offset.x,
+                                startOffsetY: offset.y,
+                                startX: z.x,
+                                startY: z.y,
+                                startW: z.width,
+                                startH: z.height,
+                                beforeLayout: before
+                                  ? cloneLayout(before)
+                                  : undefined,
+                              };
+                              (
+                                wrapRef.current as HTMLDivElement
+                              ).setPointerCapture(e.pointerId);
+                            }}
+                          />
+                          <div
+                            className={`${styles.resizeHandle} ${styles.resizeHandleNe}`}
+                            onPointerDown={(e) => {
+                              e.stopPropagation();
+                              if (layers.lockZones) return;
+                              const before = layoutRef.current;
+                              dragRef.current = {
+                                kind: 'zone_resize',
+                                id: z.id,
+                                corner: 'ne',
+                                startClientX: e.clientX,
+                                startClientY: e.clientY,
+                                startOffsetX: offset.x,
+                                startOffsetY: offset.y,
+                                startX: z.x,
+                                startY: z.y,
+                                startW: z.width,
+                                startH: z.height,
+                                beforeLayout: before
+                                  ? cloneLayout(before)
+                                  : undefined,
+                              };
+                              (
+                                wrapRef.current as HTMLDivElement
+                              ).setPointerCapture(e.pointerId);
+                            }}
+                          />
+                          <div
+                            className={`${styles.resizeHandle} ${styles.resizeHandleSw}`}
+                            onPointerDown={(e) => {
+                              e.stopPropagation();
+                              if (layers.lockZones) return;
+                              const before = layoutRef.current;
+                              dragRef.current = {
+                                kind: 'zone_resize',
+                                id: z.id,
+                                corner: 'sw',
+                                startClientX: e.clientX,
+                                startClientY: e.clientY,
+                                startOffsetX: offset.x,
+                                startOffsetY: offset.y,
+                                startX: z.x,
+                                startY: z.y,
+                                startW: z.width,
+                                startH: z.height,
+                                beforeLayout: before
+                                  ? cloneLayout(before)
+                                  : undefined,
+                              };
+                              (
+                                wrapRef.current as HTMLDivElement
+                              ).setPointerCapture(e.pointerId);
+                            }}
+                          />
+                          <div
+                            className={`${styles.resizeHandle} ${styles.resizeHandleSe}`}
+                            onPointerDown={(e) => {
+                              e.stopPropagation();
+                              if (layers.lockZones) return;
+                              const before = layoutRef.current;
+                              dragRef.current = {
+                                kind: 'zone_resize',
+                                id: z.id,
+                                corner: 'se',
+                                startClientX: e.clientX,
+                                startClientY: e.clientY,
+                                startOffsetX: offset.x,
+                                startOffsetY: offset.y,
+                                startX: z.x,
+                                startY: z.y,
+                                startW: z.width,
+                                startH: z.height,
+                                beforeLayout: before
+                                  ? cloneLayout(before)
+                                  : undefined,
+                              };
+                              (
+                                wrapRef.current as HTMLDivElement
+                              ).setPointerCapture(e.pointerId);
+                            }}
+                          />
+                        </>
+                      )}
                     </div>
-                    {isPrimary && (
-                      <>
-                        <div
-                          className={`${styles.resizeHandle} ${styles.resizeHandleNw}`}
-                          onPointerDown={(e) => {
-                            e.stopPropagation();
-                            const before = layoutRef.current;
-                            dragRef.current = {
-                              kind: 'zone_resize',
-                              id: z.id,
-                              corner: 'nw',
-                              startClientX: e.clientX,
-                              startClientY: e.clientY,
-                              startOffsetX: offset.x,
-                              startOffsetY: offset.y,
-                              startX: z.x,
-                              startY: z.y,
-                              startW: z.width,
-                              startH: z.height,
-                              beforeLayout: before
-                                ? cloneLayout(before)
-                                : undefined,
-                            };
-                            (
-                              wrapRef.current as HTMLDivElement
-                            ).setPointerCapture(e.pointerId);
-                          }}
-                        />
-                        <div
-                          className={`${styles.resizeHandle} ${styles.resizeHandleNe}`}
-                          onPointerDown={(e) => {
-                            e.stopPropagation();
-                            const before = layoutRef.current;
-                            dragRef.current = {
-                              kind: 'zone_resize',
-                              id: z.id,
-                              corner: 'ne',
-                              startClientX: e.clientX,
-                              startClientY: e.clientY,
-                              startOffsetX: offset.x,
-                              startOffsetY: offset.y,
-                              startX: z.x,
-                              startY: z.y,
-                              startW: z.width,
-                              startH: z.height,
-                              beforeLayout: before
-                                ? cloneLayout(before)
-                                : undefined,
-                            };
-                            (
-                              wrapRef.current as HTMLDivElement
-                            ).setPointerCapture(e.pointerId);
-                          }}
-                        />
-                        <div
-                          className={`${styles.resizeHandle} ${styles.resizeHandleSw}`}
-                          onPointerDown={(e) => {
-                            e.stopPropagation();
-                            const before = layoutRef.current;
-                            dragRef.current = {
-                              kind: 'zone_resize',
-                              id: z.id,
-                              corner: 'sw',
-                              startClientX: e.clientX,
-                              startClientY: e.clientY,
-                              startOffsetX: offset.x,
-                              startOffsetY: offset.y,
-                              startX: z.x,
-                              startY: z.y,
-                              startW: z.width,
-                              startH: z.height,
-                              beforeLayout: before
-                                ? cloneLayout(before)
-                                : undefined,
-                            };
-                            (
-                              wrapRef.current as HTMLDivElement
-                            ).setPointerCapture(e.pointerId);
-                          }}
-                        />
-                        <div
-                          className={`${styles.resizeHandle} ${styles.resizeHandleSe}`}
-                          onPointerDown={(e) => {
-                            e.stopPropagation();
-                            const before = layoutRef.current;
-                            dragRef.current = {
-                              kind: 'zone_resize',
-                              id: z.id,
-                              corner: 'se',
-                              startClientX: e.clientX,
-                              startClientY: e.clientY,
-                              startOffsetX: offset.x,
-                              startOffsetY: offset.y,
-                              startX: z.x,
-                              startY: z.y,
-                              startW: z.width,
-                              startH: z.height,
-                              beforeLayout: before
-                                ? cloneLayout(before)
-                                : undefined,
-                            };
-                            (
-                              wrapRef.current as HTMLDivElement
-                            ).setPointerCapture(e.pointerId);
-                          }}
-                        />
-                      </>
-                    )}
-                  </div>
-                );
-              })}
+                  );
+                })}
 
-              {cabinetItems.map((ci) => {
-                const c = cabinetMap.get(ci.cabinetId);
-                const name = c?.code || c?.name || ci.cabinetId;
-                const left = ci.x * pxPerMeter;
-                const top = ci.y * pxPerMeter;
-                const w = cabinetW * pxPerMeter;
-                const h = cabinetD * pxPerMeter;
-                const isSelected = selection.cabinets.includes(ci.cabinetId);
-                return (
-                  <div
-                    key={ci.cabinetId}
-                    className={`${styles.cabinet} ${
-                      isSelected ? styles.cabinetSelected : ''
-                    }`}
-                    style={{
-                      left,
-                      top,
-                      width: w,
-                      height: h,
-                      transform: `rotate(${ci.rotation || 0}deg)`,
-                      transformOrigin: 'center',
-                    }}
-                    onPointerDown={(e) => {
-                      e.stopPropagation();
-                      if (e.shiftKey) {
-                        toggleSelection({
-                          type: 'cabinet',
+              {layers.showCabinets &&
+                cabinetItems.map((ci) => {
+                  const c = cabinetMap.get(ci.cabinetId);
+                  const name = c?.code || c?.name || ci.cabinetId;
+                  const left = ci.x * pxPerMeter;
+                  const top = ci.y * pxPerMeter;
+                  const w = cabinetW * pxPerMeter;
+                  const h = cabinetD * pxPerMeter;
+                  const isSelected = selection.cabinets.includes(ci.cabinetId);
+                  return (
+                    <div
+                      key={ci.cabinetId}
+                      className={`${styles.cabinet} ${
+                        isSelected ? styles.cabinetSelected : ''
+                      }`}
+                      style={{
+                        left,
+                        top,
+                        width: w,
+                        height: h,
+                        transform: `rotate(${ci.rotation || 0}deg)`,
+                        transformOrigin: 'center',
+                        opacity: layers.lockCabinets ? 0.7 : 1,
+                      }}
+                      onPointerDown={(e) => {
+                        e.stopPropagation();
+                        if (e.shiftKey) {
+                          toggleSelection({
+                            type: 'cabinet',
+                            cabinetId: ci.cabinetId,
+                          });
+                          return;
+                        }
+
+                        const inSelection = selection.cabinets.includes(
+                          ci.cabinetId,
+                        );
+                        if (!inSelection) {
+                          setSelectionOnly({
+                            type: 'cabinet',
+                            cabinetId: ci.cabinetId,
+                          });
+                        } else {
+                          setSelected({
+                            type: 'cabinet',
+                            cabinetId: ci.cabinetId,
+                          });
+                        }
+
+                        if (layers.lockCabinets) {
+                          message.info('机柜图层已锁定');
+                          return;
+                        }
+
+                        const snapshot =
+                          selectionCount > 1 && inSelection
+                            ? buildSnapshot()
+                            : undefined;
+                        dragRef.current = {
+                          kind: 'cabinet',
                           cabinetId: ci.cabinetId,
-                        });
-                        return;
-                      }
+                          startClientX: e.clientX,
+                          startClientY: e.clientY,
+                          startOffsetX: offset.x,
+                          startOffsetY: offset.y,
+                          startX: ci.x,
+                          startY: ci.y,
+                          snapshot,
+                          beforeLayout: layoutRef.current
+                            ? cloneLayout(layoutRef.current)
+                            : undefined,
+                        };
+                        (wrapRef.current as HTMLDivElement).setPointerCapture(
+                          e.pointerId,
+                        );
+                      }}
+                    >
+                      {name}
+                    </div>
+                  );
+                })}
 
-                      const inSelection = selection.cabinets.includes(
-                        ci.cabinetId,
-                      );
-                      if (!inSelection) {
-                        setSelectionOnly({
-                          type: 'cabinet',
-                          cabinetId: ci.cabinetId,
-                        });
-                      } else {
-                        setSelected({
-                          type: 'cabinet',
-                          cabinetId: ci.cabinetId,
-                        });
-                      }
+              {layers.showFacilities &&
+                facilities.map((f) => {
+                  const left = f.x * pxPerMeter - 17;
+                  const top = f.y * pxPerMeter - 17;
+                  const isSelected = selection.facilities.includes(f.id);
+                  return (
+                    <div
+                      key={f.id}
+                      className={`${styles.facility} ${
+                        isSelected ? styles.facilitySelected : ''
+                      }`}
+                      style={{
+                        left,
+                        top,
+                        transform: `rotate(${f.rotation || 0}deg)`,
+                        transformOrigin: 'center',
+                        opacity: layers.lockFacilities ? 0.75 : 1,
+                      }}
+                      onPointerDown={(e) => {
+                        e.stopPropagation();
+                        if (e.shiftKey) {
+                          toggleSelection({ type: 'facility', id: f.id });
+                          return;
+                        }
 
-                      const snapshot =
-                        selectionCount > 1 && inSelection
-                          ? buildSnapshot()
-                          : undefined;
-                      dragRef.current = {
-                        kind: 'cabinet',
-                        cabinetId: ci.cabinetId,
-                        startClientX: e.clientX,
-                        startClientY: e.clientY,
-                        startOffsetX: offset.x,
-                        startOffsetY: offset.y,
-                        startX: ci.x,
-                        startY: ci.y,
-                        snapshot,
-                        beforeLayout: layoutRef.current
-                          ? cloneLayout(layoutRef.current)
-                          : undefined,
-                      };
-                      (wrapRef.current as HTMLDivElement).setPointerCapture(
-                        e.pointerId,
-                      );
-                    }}
-                  >
-                    {name}
-                  </div>
-                );
-              })}
+                        const inSelection = selection.facilities.includes(f.id);
+                        if (!inSelection) {
+                          setSelectionOnly({ type: 'facility', id: f.id });
+                        } else {
+                          setSelected({ type: 'facility', id: f.id });
+                        }
 
-              {facilities.map((f) => {
-                const left = f.x * pxPerMeter - 17;
-                const top = f.y * pxPerMeter - 17;
-                const isSelected = selection.facilities.includes(f.id);
-                return (
-                  <div
-                    key={f.id}
-                    className={`${styles.facility} ${
-                      isSelected ? styles.facilitySelected : ''
-                    }`}
-                    style={{
-                      left,
-                      top,
-                      transform: `rotate(${f.rotation || 0}deg)`,
-                      transformOrigin: 'center',
-                    }}
-                    onPointerDown={(e) => {
-                      e.stopPropagation();
-                      if (e.shiftKey) {
-                        toggleSelection({ type: 'facility', id: f.id });
-                        return;
-                      }
+                        if (layers.lockFacilities) {
+                          message.info('设施图层已锁定');
+                          return;
+                        }
 
-                      const inSelection = selection.facilities.includes(f.id);
-                      if (!inSelection) {
-                        setSelectionOnly({ type: 'facility', id: f.id });
-                      } else {
-                        setSelected({ type: 'facility', id: f.id });
-                      }
-
-                      const snapshot =
-                        selectionCount > 1 && inSelection
-                          ? buildSnapshot()
-                          : undefined;
-                      dragRef.current = {
-                        kind: 'facility',
-                        id: f.id,
-                        startClientX: e.clientX,
-                        startClientY: e.clientY,
-                        startOffsetX: offset.x,
-                        startOffsetY: offset.y,
-                        startX: f.x,
-                        startY: f.y,
-                        snapshot,
-                        beforeLayout: layoutRef.current
-                          ? cloneLayout(layoutRef.current)
-                          : undefined,
-                      };
-                      (wrapRef.current as HTMLDivElement).setPointerCapture(
-                        e.pointerId,
-                      );
-                    }}
-                  >
-                    {facilityIcon(f.type)}
-                  </div>
-                );
-              })}
+                        const snapshot =
+                          selectionCount > 1 && inSelection
+                            ? buildSnapshot()
+                            : undefined;
+                        dragRef.current = {
+                          kind: 'facility',
+                          id: f.id,
+                          startClientX: e.clientX,
+                          startClientY: e.clientY,
+                          startOffsetX: offset.x,
+                          startOffsetY: offset.y,
+                          startX: f.x,
+                          startY: f.y,
+                          snapshot,
+                          beforeLayout: layoutRef.current
+                            ? cloneLayout(layoutRef.current)
+                            : undefined,
+                        };
+                        (wrapRef.current as HTMLDivElement).setPointerCapture(
+                          e.pointerId,
+                        );
+                      }}
+                    >
+                      {facilityIcon(f.type)}
+                    </div>
+                  );
+                })}
             </div>
           </div>
         </Card>
