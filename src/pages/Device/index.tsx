@@ -43,6 +43,7 @@ import {
   getDevices,
   unmountDevice,
   updateDevice,
+  validateDeviceMount,
 } from '@/services/idc/device';
 import { getAllDeviceTemplates } from '@/services/idc/deviceTemplate';
 
@@ -72,21 +73,26 @@ const USlotSelector: React.FC<{
   deviceUHeight: number; // 设备占用U位
   selectedStartU: number | undefined;
   onSelect: (startU: number) => void;
+  uUsage?: { u: number; occupied: boolean; deviceName?: string }[];
+  loading?: boolean;
 }> = ({ cabinetId, uHeight, deviceUHeight, selectedStartU, onSelect }) => {
-  const [uUsage, setUUsage] = useState<
+  const [innerUsage, setInnerUsage] = useState<
     { u: number; occupied: boolean; deviceName?: string }[]
   >([]);
-  const [loading, setLoading] = useState(false);
+  const [innerLoading, setInnerLoading] = useState(false);
+  const mergedLoading = typeof loading === 'boolean' ? loading : innerLoading;
+  const mergedUsage = uUsage ?? innerUsage;
 
   useEffect(() => {
     if (cabinetId) {
-      setLoading(true);
+      if (uUsage) return;
+      setInnerLoading(true);
       getCabinetUUsage(cabinetId)
         .then((res) => {
           if (res.success && res.data) {
             // API返回的是对象 { uSlots: [...] }，需要提取并转换
             const slots = res.data.uSlots || [];
-            setUUsage(
+            setInnerUsage(
               slots.map((s: any) => ({
                 u: s.u,
                 occupied: !!s.deviceId,
@@ -95,14 +101,14 @@ const USlotSelector: React.FC<{
             );
           }
         })
-        .finally(() => setLoading(false));
+        .finally(() => setInnerLoading(false));
     }
-  }, [cabinetId]);
+  }, [cabinetId, uUsage]);
 
   // 检查某个起始U位是否可用
   const isSlotAvailable = (startU: number) => {
     for (let u = startU; u < startU + deviceUHeight; u++) {
-      const slot = uUsage.find((s) => s.u === u);
+      const slot = mergedUsage.find((s) => s.u === u);
       if (slot?.occupied) return false;
       if (u > uHeight) return false;
     }
@@ -118,11 +124,11 @@ const USlotSelector: React.FC<{
       }
     }
     return slots;
-  }, [uUsage, uHeight, deviceUHeight]);
+  }, [mergedUsage, uHeight, deviceUHeight]);
 
   if (!cabinetId)
     return <Alert message="请先选择目标机柜" type="info" showIcon />;
-  if (loading) return <div>加载U位信息...</div>;
+  if (mergedLoading) return <div>加载U位信息...</div>;
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -139,7 +145,7 @@ const USlotSelector: React.FC<{
         }}
       >
         {Array.from({ length: uHeight }, (_, i) => uHeight - i).map((u) => {
-          const slot = uUsage.find((s) => s.u === u);
+          const slot = mergedUsage.find((s) => s.u === u);
           const isOccupied = slot?.occupied;
           const isSelected =
             selectedStartU &&
@@ -216,6 +222,13 @@ const DevicePage: React.FC = () => {
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>();
   const [selectedCabinetId, setSelectedCabinetId] = useState<string>();
   const [selectedStartU, setSelectedStartU] = useState<number>();
+  const [cabinetSlots, setCabinetSlots] = useState<
+    { u: number; occupied: boolean; deviceName?: string }[]
+  >([]);
+  const [cabinetSlotsLoading, setCabinetSlotsLoading] = useState(false);
+  const [mountValidation, setMountValidation] =
+    useState<IDC.DeviceMountValidationResult | null>(null);
+  const [mountValidationLoading, setMountValidationLoading] = useState(false);
 
   // 端口详情视图状态
   const [portViewOpen, setPortViewOpen] = useState(false);
@@ -237,6 +250,188 @@ const DevicePage: React.FC = () => {
   const selectedCabinet = useMemo(() => {
     return cabinets.find((c) => c.id === selectedCabinetId);
   }, [selectedCabinetId, cabinets]);
+
+  useEffect(() => {
+    if (!selectedCabinetId) {
+      setCabinetSlots([]);
+      setMountValidation(null);
+      return;
+    }
+    setCabinetSlotsLoading(true);
+    getCabinetUUsage(selectedCabinetId)
+      .then((res) => {
+        if (res.success && res.data) {
+          const slots = res.data.uSlots || [];
+          setCabinetSlots(
+            slots.map((s: any) => ({
+              u: s.u,
+              occupied: !!s.deviceId,
+              deviceName: s.deviceName,
+            })),
+          );
+        } else {
+          setCabinetSlots([]);
+        }
+      })
+      .finally(() => setCabinetSlotsLoading(false));
+  }, [selectedCabinetId]);
+
+  const deviceMaxPower = useMemo(() => {
+    if (selectedTemplate?.maxPower) return selectedTemplate.maxPower;
+    const category = selectedTemplate?.category;
+    const defaults: Record<string, number> = {
+      server: 800,
+      storage: 1200,
+      switch: 300,
+      router: 300,
+      firewall: 400,
+      loadbalancer: 400,
+      other: 200,
+    };
+    return category ? defaults[category] || 200 : 200;
+  }, [selectedTemplate]);
+
+  const powerPortCount = useMemo(() => {
+    return (
+      selectedTemplate?.portGroups?.reduce((sum: number, pg: any) => {
+        return pg.portType === 'Power' ? sum + (pg.count || 0) : sum;
+      }, 0) || 0
+    );
+  }, [selectedTemplate]);
+
+  const totalPortCount = useMemo(() => {
+    return (
+      selectedTemplate?.portGroups?.reduce((sum: number, pg: any) => {
+        return sum + (pg.count || 0);
+      }, 0) || 0
+    );
+  }, [selectedTemplate]);
+
+  useEffect(() => {
+    const cabinetId = selectedCabinetId;
+    const templateId = selectedTemplateId;
+    const cabinet = selectedCabinet;
+    const tpl = selectedTemplate;
+
+    if (!cabinetId || !templateId || !cabinet || !tpl) {
+      setMountValidation(null);
+      return;
+    }
+
+    const deviceUHeight = tpl.uHeight || 1;
+    const startU = selectedStartU;
+    const endU = startU ? startU + deviceUHeight - 1 : undefined;
+
+    setMountValidationLoading(true);
+    validateDeviceMount({
+      cabinetId,
+      cabinetUHeight: cabinet.uHeight,
+      cabinetMaxPower: cabinet.maxPower,
+      cabinetCurrentPower: cabinet.currentPower,
+      templateId,
+      deviceUHeight,
+      deviceMaxPower,
+      powerPortCount,
+      totalPortCount,
+      startU,
+      endU,
+    })
+      .then((res) => {
+        if (res.success && res.data) {
+          setMountValidation(res.data);
+        } else {
+          setMountValidation(null);
+        }
+      })
+      .finally(() => setMountValidationLoading(false));
+  }, [
+    selectedCabinetId,
+    selectedTemplateId,
+    selectedCabinet,
+    selectedTemplate,
+    selectedStartU,
+    deviceMaxPower,
+    powerPortCount,
+    totalPortCount,
+  ]);
+
+  const cabinetOptions = useMemo(() => {
+    const deviceUHeight = selectedTemplate?.uHeight || 1;
+    const requiredPower = deviceMaxPower || 0;
+    return [...cabinets]
+      .map((c) => {
+        const availableU = (c.uHeight || 42) - (c.usedU || 0);
+        const headroom = (c.maxPower || 0) - (c.currentPower || 0);
+        const canFitU = availableU >= deviceUHeight;
+        const canFitPower = c.maxPower
+          ? c.currentPower + requiredPower <= c.maxPower
+          : true;
+        return {
+          value: c.id,
+          sortScore:
+            (canFitU ? 1_000_000 : 0) +
+            Math.max(0, availableU) * 1000 +
+            Math.max(0, headroom),
+          label: `${c.name} (${c.code}) - 剩余${availableU}U | 余功率${Math.max(0, headroom)}W`,
+        };
+      })
+      .sort((a, b) => b.sortScore - a.sortScore)
+      .map(({ value, label }) => ({ value, label }));
+  }, [cabinets, selectedTemplate, deviceMaxPower]);
+
+  const validationSummary = useMemo(() => {
+    if (!selectedTemplate || !selectedCabinet) return null;
+    const deviceUHeight = selectedTemplate.uHeight || 1;
+    const startU = selectedStartU;
+    const endU = startU ? startU + deviceUHeight - 1 : undefined;
+    const errors: string[] = [];
+    const warnings: string[] = [];
+
+    if (startU && endU) {
+      if (endU > selectedCabinet.uHeight) {
+        errors.push('U位超出机柜高度');
+      } else {
+        const occupied = cabinetSlots.some(
+          (s) => s.occupied && s.u >= startU && s.u <= endU,
+        );
+        if (occupied) errors.push('所选U位区间存在占用冲突');
+      }
+    }
+
+    const maxPower = selectedCabinet.maxPower || 0;
+    const currentPower = selectedCabinet.currentPower || 0;
+    const nextPower = maxPower ? currentPower + deviceMaxPower : currentPower;
+
+    if (maxPower) {
+      if (nextPower > maxPower) {
+        errors.push('功率将超过机柜最大承载');
+      } else if (nextPower / maxPower >= 0.8) {
+        warnings.push('功率负载较高，可能存在散热压力');
+      }
+    }
+
+    if (!totalPortCount) warnings.push('设备模板未定义端口信息');
+    if (powerPortCount < 2) warnings.push('设备电源口可能不支持A/B双路冗余');
+    warnings.push('A/B路电源来源未配置，建议在电力拓扑中补齐冗余链路');
+
+    return { errors, warnings, startU, endU, nextPower, maxPower };
+  }, [
+    selectedTemplate,
+    selectedCabinet,
+    selectedStartU,
+    cabinetSlots,
+    deviceMaxPower,
+    powerPortCount,
+    totalPortCount,
+  ]);
+
+  const resetCreateForm = () => {
+    setSelectedTemplateId(undefined);
+    setSelectedCabinetId(undefined);
+    setSelectedStartU(undefined);
+    setCabinetSlots([]);
+    setMountValidation(null);
+  };
 
   const columns: ProColumns<IDC.Device>[] = [
     {
@@ -481,12 +676,6 @@ const DevicePage: React.FC = () => {
     },
   ];
 
-  const resetCreateForm = () => {
-    setSelectedTemplateId(undefined);
-    setSelectedCabinetId(undefined);
-    setSelectedStartU(undefined);
-  };
-
   return (
     <PageContainer
       header={{
@@ -546,6 +735,14 @@ const DevicePage: React.FC = () => {
             message.error('请选择起始U位');
             return false;
           }
+          if (mountValidationLoading) {
+            message.warning('正在进行容量校验，请稍后');
+            return false;
+          }
+          if (mountValidation && !mountValidation.ok) {
+            message.error('容量校验未通过，请调整上架位置或目标机柜');
+            return false;
+          }
           const deviceUHeight = selectedTemplate?.uHeight || 1;
           const res = await createDevice({
             ...values,
@@ -583,10 +780,7 @@ const DevicePage: React.FC = () => {
             <ProFormSelect
               name="cabinetId"
               label="目标机柜"
-              options={cabinets.map((c) => ({
-                value: c.id,
-                label: `${c.name} (${c.code}) - 剩余${c.uHeight - c.usedU}U`,
-              }))}
+              options={cabinetOptions}
               showSearch
               rules={[{ required: true, message: '请选择目标机柜' }]}
               fieldProps={{
@@ -609,7 +803,77 @@ const DevicePage: React.FC = () => {
                   deviceUHeight={selectedTemplate?.uHeight || 1}
                   selectedStartU={selectedStartU}
                   onSelect={setSelectedStartU}
+                  uUsage={cabinetSlots}
+                  loading={cabinetSlotsLoading}
                 />
+              </div>
+            )}
+
+            {(selectedCabinetId || selectedTemplateId) && (
+              <div style={{ marginBottom: 24 }}>
+                <div style={{ marginBottom: 8, fontWeight: 500 }}>容量校验</div>
+                {mountValidationLoading && <div>校验中...</div>}
+                {!mountValidationLoading && (
+                  <>
+                    {validationSummary?.errors?.length ? (
+                      <Alert
+                        type="error"
+                        showIcon
+                        message="校验未通过"
+                        description={
+                          <div>
+                            {validationSummary.errors.map((e) => (
+                              <div key={e}>{e}</div>
+                            ))}
+                          </div>
+                        }
+                      />
+                    ) : (
+                      <Alert
+                        type="success"
+                        showIcon
+                        message="基础容量校验通过"
+                      />
+                    )}
+                    {validationSummary?.warnings?.length ? (
+                      <Alert
+                        style={{ marginTop: 8 }}
+                        type="warning"
+                        showIcon
+                        message="建议关注项"
+                        description={
+                          <div>
+                            {validationSummary.warnings.map((w) => (
+                              <div key={w}>{w}</div>
+                            ))}
+                          </div>
+                        }
+                      />
+                    ) : null}
+                    {mountValidation?.recommendedStartU &&
+                      mountValidation.recommendedEndU && (
+                        <Alert
+                          style={{ marginTop: 8 }}
+                          type="info"
+                          showIcon
+                          message={`推荐上架位置：U${mountValidation.recommendedStartU}-U${mountValidation.recommendedEndU}`}
+                          action={
+                            <Button
+                              size="small"
+                              type="link"
+                              onClick={() =>
+                                setSelectedStartU(
+                                  mountValidation.recommendedStartU,
+                                )
+                              }
+                            >
+                              使用推荐
+                            </Button>
+                          }
+                        />
+                      )}
+                  </>
+                )}
               </div>
             )}
 

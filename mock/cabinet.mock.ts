@@ -1,5 +1,6 @@
 import type { Request, Response } from 'express';
 import { v4 as uuidv4 } from 'uuid';
+import { devicesData } from './device.mock';
 
 // Mock 机柜数据
 const cabinets: IDC.Cabinet[] = [
@@ -218,20 +219,31 @@ export default {
             return;
         }
 
-        // 生成U位使用详情（模拟数据）
         const uSlots = Array.from({ length: cabinet.uHeight }, (_, i) => ({
             u: i + 1,
-            deviceId: Math.random() > 0.6 ? `dev-${uuidv4().slice(0, 8)}` : null,
-            deviceName: Math.random() > 0.6 ? `设备-${i + 1}` : null,
+            deviceId: null as string | null,
+            deviceName: null as string | null,
         }));
+
+        const cabinetDevices = devicesData.filter(d => d.cabinetId === id);
+        cabinetDevices.forEach(d => {
+            for (let u = d.startU; u <= d.endU; u++) {
+                const slot = uSlots[u - 1];
+                if (!slot) continue;
+                slot.deviceId = d.id;
+                slot.deviceName = d.name;
+            }
+        });
+
+        const usedU = uSlots.filter(s => s.deviceId).length;
 
         res.json({
             success: true,
             data: {
                 cabinetId: id,
                 uHeight: cabinet.uHeight,
-                usedU: cabinet.usedU,
-                availableU: cabinet.uHeight - cabinet.usedU,
+                usedU,
+                availableU: cabinet.uHeight - usedU,
                 uSlots,
             },
         });

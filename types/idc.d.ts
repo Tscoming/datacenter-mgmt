@@ -192,6 +192,30 @@ declare namespace IDC {
     description?: string;
   }
 
+  interface DeviceMountValidationRequest {
+    cabinetId: string;
+    cabinetUHeight: number;
+    cabinetMaxPower?: number;
+    cabinetCurrentPower?: number;
+    templateId: string;
+    deviceUHeight: number;
+    deviceMaxPower?: number;
+    powerPortCount?: number;
+    totalPortCount?: number;
+    startU?: number;
+    endU?: number;
+  }
+
+  interface DeviceMountValidationResult {
+    ok: boolean;
+    errors: string[];
+    warnings: string[];
+    recommendedStartU?: number;
+    recommendedEndU?: number;
+    powerAfter?: number;
+    powerRatioAfter?: number;
+  }
+
   // ==================== 端口 ====================
 
   /** VLAN配置 */

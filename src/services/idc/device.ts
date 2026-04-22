@@ -89,3 +89,13 @@ export async function unmountDevice(id: string) {
         method: 'POST',
     });
 }
+
+export async function validateDeviceMount(data: IDC.DeviceMountValidationRequest) {
+    return request<IDC.ApiResponse<IDC.DeviceMountValidationResult>>(
+        '/api/idc/devices/validate-mount',
+        {
+            method: 'POST',
+            data,
+        },
+    );
+}
