@@ -240,6 +240,8 @@ let devices: IDC.Device[] = [
     },
 ];
 
+export const devicesData = devices;
+
 const waitTime = (time: number = 100) => {
     return new Promise((resolve) => {
         setTimeout(() => {
@@ -318,6 +320,7 @@ export default {
     'POST /api/idc/devices': async (req: Request, res: Response) => {
         await waitTime(500);
         const body = req.body as IDC.DeviceCreateParams;
+        const endUFromBody = (req.body as any)?.endU as number | undefined;
 
         // 这里应该根据模板获取uHeight来计算endU
         const newDevice: IDC.Device = {
@@ -328,7 +331,7 @@ export default {
             name: body.name,
             serialNumber: body.serialNumber,
             startU: body.startU,
-            endU: body.startU + 1, // 假设所有设备都是2U，实际应根据模板计算
+            endU: endUFromBody ?? body.startU + 1,
             managementIp: body.managementIp,
             status: 'online',
             purchaseDate: body.purchaseDate,
@@ -343,6 +346,79 @@ export default {
 
         devices.push(newDevice);
         res.json({ success: true, data: newDevice });
+    },
+
+    'POST /api/idc/devices/validate-mount': async (req: Request, res: Response) => {
+        await waitTime(150);
+        const body = req.body as IDC.DeviceMountValidationRequest;
+
+        const errors: string[] = [];
+        const warnings: string[] = [];
+
+        const cabinetId = body.cabinetId;
+        const uHeight = body.cabinetUHeight || 42;
+        const deviceUHeight = body.deviceUHeight || 1;
+        const startU = body.startU;
+        const endU = body.endU ?? (startU ? startU + deviceUHeight - 1 : undefined);
+
+        const isOverlap = (aStart: number, aEnd: number, bStart: number, bEnd: number) =>
+            Math.max(aStart, bStart) <= Math.min(aEnd, bEnd);
+
+        const canPlaceAt = (candidateStart: number) => {
+            const candidateEnd = candidateStart + deviceUHeight - 1;
+            if (candidateEnd > uHeight) return false;
+            const existing = devices.filter(d => d.cabinetId === cabinetId);
+            return !existing.some(d => isOverlap(candidateStart, candidateEnd, d.startU, d.endU));
+        };
+
+        let recommendedStartU: number | undefined;
+        for (let u = uHeight - deviceUHeight + 1; u >= 1; u--) {
+            if (canPlaceAt(u)) {
+                recommendedStartU = u;
+                break;
+            }
+        }
+
+        if (startU && endU) {
+            if (startU < 1) errors.push('起始U位必须大于等于1');
+            if (endU > uHeight) errors.push('U位超出机柜高度');
+            const existing = devices.filter(d => d.cabinetId === cabinetId);
+            if (existing.some(d => isOverlap(startU, endU, d.startU, d.endU))) {
+                errors.push('所选U位区间存在占用冲突');
+            }
+        }
+
+        const maxPower = body.cabinetMaxPower || 0;
+        const currentPower = body.cabinetCurrentPower || 0;
+        const devicePower = body.deviceMaxPower || 0;
+        const powerAfter = maxPower ? currentPower + devicePower : undefined;
+        const powerRatioAfter =
+            maxPower && powerAfter !== undefined ? powerAfter / maxPower : undefined;
+
+        if (maxPower && powerAfter !== undefined) {
+            if (powerAfter > maxPower) errors.push('功率将超过机柜最大承载');
+            if (powerAfter / maxPower >= 0.8 && powerAfter <= maxPower) {
+                warnings.push('功率负载较高，可能存在散热压力');
+            }
+        }
+
+        if (!body.totalPortCount) warnings.push('设备模板未定义端口信息');
+        if ((body.powerPortCount || 0) < 2) warnings.push('设备电源口可能不支持A/B双路冗余');
+        warnings.push('A/B路电源来源未配置，建议在电力拓扑中补齐冗余链路');
+
+        const ok = errors.length === 0;
+        res.json({
+            success: true,
+            data: {
+                ok,
+                errors,
+                warnings,
+                recommendedStartU,
+                recommendedEndU: recommendedStartU ? recommendedStartU + deviceUHeight - 1 : undefined,
+                powerAfter,
+                powerRatioAfter,
+            },
+        });
     },
 
     // 更新设备
