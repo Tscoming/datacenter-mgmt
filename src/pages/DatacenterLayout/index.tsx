@@ -5,6 +5,7 @@ import {
   Button,
   Card,
   Divider,
+  Drawer,
   Form,
   Input,
   InputNumber,
@@ -2021,19 +2022,19 @@ const DatacenterLayoutPage: React.FC = () => {
 
   const toolOptions = useMemo(() => {
     return [
-      { label: '选择', value: 'select', icon: <ScanEye size={16} /> },
-      { label: '区域', value: 'zone', icon: <Square size={16} /> },
-      { label: '热通道', value: 'hot_aisle', icon: <Thermometer size={16} /> },
-      { label: '冷通道', value: 'cold_aisle', icon: <Ruler size={16} /> },
-      { label: 'UPS', value: 'ups', icon: <Package size={16} /> },
-      { label: '空调', value: 'crac', icon: <AirVent size={16} /> },
-      { label: '传感器', value: 'sensor', icon: <Thermometer size={16} /> },
-      { label: '门禁', value: 'door', icon: <DoorClosed size={16} /> },
-      { label: '摄像头', value: 'camera', icon: <Camera size={16} /> },
+      { label: '选择', value: 'select', icon: <ScanEye size={20} /> },
+      { label: '区域', value: 'zone', icon: <Square size={20} /> },
+      { label: '热通道', value: 'hot_aisle', icon: <Thermometer size={20} /> },
+      { label: '冷通道', value: 'cold_aisle', icon: <Ruler size={20} /> },
+      { label: 'UPS', value: 'ups', icon: <Package size={20} /> },
+      { label: '空调', value: 'crac', icon: <AirVent size={20} /> },
+      { label: '传感器', value: 'sensor', icon: <Thermometer size={20} /> },
+      { label: '门禁', value: 'door', icon: <DoorClosed size={20} /> },
+      { label: '摄像头', value: 'camera', icon: <Camera size={20} /> },
       {
         label: '灭火器',
         value: 'fire_extinguisher',
-        icon: <FlameKindling size={16} />,
+        icon: <FlameKindling size={20} />,
       },
     ];
   }, []);
@@ -2299,11 +2300,22 @@ const DatacenterLayoutPage: React.FC = () => {
           <Card>
             <Space direction="vertical" style={{ width: '100%' }}>
               <Typography.Text type="secondary">工具</Typography.Text>
-              <Segmented
-                value={tool}
-                onChange={(v) => setTool(v as ToolMode)}
-                options={toolOptions as any}
-              />
+              <div className={styles.toolModeGrid}>
+                {(toolOptions as any[]).map((o) => (
+                  <Button
+                    key={o.value}
+                    className={`${styles.toolModeButton} ${
+                      styles[`toolMode_${o.value}` as keyof typeof styles] || ''
+                    } ${tool === o.value ? styles.toolModeActive : ''}`}
+                    type="default"
+                    size="large"
+                    icon={o.icon}
+                    onClick={() => setTool(o.value as ToolMode)}
+                  >
+                    <span className={styles.toolModeLabel}>{o.label}</span>
+                  </Button>
+                ))}
+              </div>
               <Alert
                 type="info"
                 showIcon
@@ -2313,54 +2325,80 @@ const DatacenterLayoutPage: React.FC = () => {
                     : '在画布空白处点击/拖拽创建或放置'
                 }
               />
-              <Space wrap>
-                <Button
-                  icon={<ZoomIn size={16} />}
-                  onClick={() => setScale((s) => clamp(s + 0.1, 0.3, 3))}
-                />
-                <Button
-                  icon={<ZoomOut size={16} />}
-                  onClick={() => setScale((s) => clamp(s - 0.1, 0.3, 3))}
-                />
-                <Button
-                  icon={<Undo2 size={16} />}
-                  onClick={() => {
-                    setScale(1);
-                    setOffset({ x: 20, y: 20 });
-                  }}
-                />
-                <Tooltip title="适配视图">
-                  <Button onClick={fitToView} icon={<Ruler size={16} />} />
+              <div className={styles.toolIconGrid}>
+                <Tooltip title="放大">
+                  <Button
+                    size="large"
+                    className={styles.toolIconButton}
+                    icon={<ZoomIn size={20} />}
+                    onClick={() => setScale((s) => clamp(s + 0.1, 0.3, 3))}
+                  />
                 </Tooltip>
-              </Space>
-              <Space wrap style={{ alignItems: 'center' }}>
+                <Tooltip title="缩小">
+                  <Button
+                    size="large"
+                    className={styles.toolIconButton}
+                    icon={<ZoomOut size={20} />}
+                    onClick={() => setScale((s) => clamp(s - 0.1, 0.3, 3))}
+                  />
+                </Tooltip>
+                <Tooltip title="重置视图">
+                  <Button
+                    size="large"
+                    className={styles.toolIconButton}
+                    icon={<Undo2 size={20} />}
+                    onClick={() => {
+                      setScale(1);
+                      setOffset({ x: 20, y: 20 });
+                    }}
+                  />
+                </Tooltip>
+                <Tooltip title="适配视图">
+                  <Button
+                    size="large"
+                    className={styles.toolIconButton}
+                    onClick={fitToView}
+                    icon={<Ruler size={20} />}
+                  />
+                </Tooltip>
                 <Tooltip title="撤销 (Ctrl+Z)">
                   <Button
+                    size="large"
+                    className={styles.toolIconButton}
                     disabled={!canUndo}
-                    icon={<Undo2 size={16} />}
+                    icon={<Undo2 size={20} />}
                     onClick={undo}
                   />
                 </Tooltip>
                 <Tooltip title="重做 (Ctrl+Y)">
                   <Button
+                    size="large"
+                    className={styles.toolIconButton}
                     disabled={!canRedo}
-                    icon={<Redo2 size={16} />}
+                    icon={<Redo2 size={20} />}
                     onClick={redo}
                   />
                 </Tooltip>
                 <Tooltip title="导出JSON（复制到剪贴板）">
-                  <Button icon={<Download size={16} />} onClick={exportJson} />
+                  <Button
+                    size="large"
+                    className={styles.toolIconButton}
+                    icon={<Download size={20} />}
+                    onClick={exportJson}
+                  />
                 </Tooltip>
                 <Tooltip title="导入JSON">
                   <Button
-                    icon={<Upload size={16} />}
+                    size="large"
+                    className={styles.toolIconButton}
+                    icon={<Upload size={20} />}
                     onClick={() => {
                       setImportText('');
                       setImportOpen(true);
                     }}
                   />
                 </Tooltip>
-              </Space>
+              </div>
               <Space wrap style={{ alignItems: 'center' }}>
                 <Typography.Text type="secondary">吸附</Typography.Text>
                 <Switch checked={snapEnabled} onChange={setSnapEnabled} />
@@ -2555,249 +2593,6 @@ const DatacenterLayoutPage: React.FC = () => {
                 />
               </Space>
             </Space>
-          </Card>
-
-          <Card>
-            <Typography.Text type="secondary">属性</Typography.Text>
-            <Divider style={{ margin: '12px 0' }} />
-            {!selected ? (
-              <Typography.Text type="secondary">未选择对象</Typography.Text>
-            ) : selected.type === 'cabinet' ? (
-              <Form layout="vertical">
-                <Form.Item label="机柜">
-                  <Input
-                    value={
-                      cabinetMap.get(selected.cabinetId)?.name ||
-                      selected.cabinetId
-                    }
-                    disabled
-                  />
-                </Form.Item>
-                <Form.Item label="X(m)">
-                  <InputNumber
-                    value={selectedCabinetItem?.x || 0}
-                    step={gridStep}
-                    onChange={(v) => {
-                      const before = layoutRef.current;
-                      if (before) pushHistory(before);
-                      const raw = Number(v || 0);
-                      setCabinetItem(selected.cabinetId, {
-                        x: snapEnabled ? snap(raw, gridStep) : raw,
-                      });
-                    }}
-                    style={{ width: '100%' }}
-                  />
-                </Form.Item>
-                <Form.Item label="Y(m)">
-                  <InputNumber
-                    value={selectedCabinetItem?.y || 0}
-                    step={gridStep}
-                    onChange={(v) => {
-                      const before = layoutRef.current;
-                      if (before) pushHistory(before);
-                      const raw = Number(v || 0);
-                      setCabinetItem(selected.cabinetId, {
-                        y: snapEnabled ? snap(raw, gridStep) : raw,
-                      });
-                    }}
-                    style={{ width: '100%' }}
-                  />
-                </Form.Item>
-                <Form.Item label="旋转(°)">
-                  <InputNumber
-                    value={selectedCabinetItem?.rotation || 0}
-                    step={90}
-                    onChange={(v) => {
-                      const before = layoutRef.current;
-                      if (before) pushHistory(before);
-                      setCabinetItem(selected.cabinetId, {
-                        rotation: Number(v || 0),
-                      });
-                    }}
-                    style={{ width: '100%' }}
-                  />
-                </Form.Item>
-              </Form>
-            ) : selected.type === 'zone' ? (
-              <Form layout="vertical">
-                <Form.Item label="类型">
-                  <Select
-                    value={selectedZone?.type}
-                    options={[
-                      { value: 'zone', label: '区域' },
-                      { value: 'hot_aisle', label: '热通道' },
-                      { value: 'cold_aisle', label: '冷通道' },
-                      { value: 'restricted', label: '限制区' },
-                      { value: 'other', label: '其他' },
-                    ]}
-                    onChange={(v) => {
-                      if (!selectedZone) return;
-                      const before = layoutRef.current;
-                      if (before) pushHistory(before);
-                      setZoneItem(selectedZone.id, { type: v as any });
-                    }}
-                  />
-                </Form.Item>
-                <Form.Item label="名称">
-                  <Input
-                    value={selectedZone?.name}
-                    onChange={(e) =>
-                      selectedZone &&
-                      setZoneItem(selectedZone.id, { name: e.target.value })
-                    }
-                  />
-                </Form.Item>
-                <Form.Item label="X(m)">
-                  <InputNumber
-                    value={selectedZone?.x || 0}
-                    step={gridStep}
-                    onChange={(v) => {
-                      if (!selectedZone) return;
-                      const before = layoutRef.current;
-                      if (before) pushHistory(before);
-                      const raw = Number(v || 0);
-                      setZoneItem(selectedZone.id, {
-                        x: snapEnabled ? snap(raw, gridStep) : raw,
-                      });
-                    }}
-                    style={{ width: '100%' }}
-                  />
-                </Form.Item>
-                <Form.Item label="Y(m)">
-                  <InputNumber
-                    value={selectedZone?.y || 0}
-                    step={gridStep}
-                    onChange={(v) => {
-                      if (!selectedZone) return;
-                      const before = layoutRef.current;
-                      if (before) pushHistory(before);
-                      const raw = Number(v || 0);
-                      setZoneItem(selectedZone.id, {
-                        y: snapEnabled ? snap(raw, gridStep) : raw,
-                      });
-                    }}
-                    style={{ width: '100%' }}
-                  />
-                </Form.Item>
-                <Form.Item label="宽(m)">
-                  <InputNumber
-                    value={selectedZone?.width || 0}
-                    step={gridStep}
-                    min={gridStep}
-                    onChange={(v) => {
-                      if (!selectedZone) return;
-                      const before = layoutRef.current;
-                      if (before) pushHistory(before);
-                      const raw = Math.max(gridStep, Number(v || 0));
-                      setZoneItem(selectedZone.id, {
-                        width: snapEnabled
-                          ? Math.max(gridStep, snap(raw, gridStep))
-                          : raw,
-                      });
-                    }}
-                    style={{ width: '100%' }}
-                  />
-                </Form.Item>
-                <Form.Item label="高(m)">
-                  <InputNumber
-                    value={selectedZone?.height || 0}
-                    step={gridStep}
-                    min={gridStep}
-                    onChange={(v) => {
-                      if (!selectedZone) return;
-                      const before = layoutRef.current;
-                      if (before) pushHistory(before);
-                      const raw = Math.max(gridStep, Number(v || 0));
-                      setZoneItem(selectedZone.id, {
-                        height: snapEnabled
-                          ? Math.max(gridStep, snap(raw, gridStep))
-                          : raw,
-                      });
-                    }}
-                    style={{ width: '100%' }}
-                  />
-                </Form.Item>
-                <Form.Item label="旋转(°)">
-                  <InputNumber
-                    value={selectedZone?.rotation || 0}
-                    step={90}
-                    onChange={(v) => {
-                      if (!selectedZone) return;
-                      const before = layoutRef.current;
-                      if (before) pushHistory(before);
-                      setZoneItem(selectedZone.id, {
-                        rotation: Number(v || 0),
-                      });
-                    }}
-                    style={{ width: '100%' }}
-                  />
-                </Form.Item>
-              </Form>
-            ) : (
-              <Form layout="vertical">
-                <Form.Item label="类型">
-                  <Input value={selectedFacility?.type} disabled />
-                </Form.Item>
-                <Form.Item label="名称">
-                  <Input
-                    value={selectedFacility?.name}
-                    onChange={(e) =>
-                      selectedFacility &&
-                      setFacilityItem(selectedFacility.id, {
-                        name: e.target.value,
-                      })
-                    }
-                  />
-                </Form.Item>
-                <Form.Item label="X(m)">
-                  <InputNumber
-                    value={selectedFacility?.x || 0}
-                    step={gridStep}
-                    onChange={(v) => {
-                      if (!selectedFacility) return;
-                      const before = layoutRef.current;
-                      if (before) pushHistory(before);
-                      const raw = Number(v || 0);
-                      setFacilityItem(selectedFacility.id, {
-                        x: snapEnabled ? snap(raw, gridStep) : raw,
-                      });
-                    }}
-                    style={{ width: '100%' }}
-                  />
-                </Form.Item>
-                <Form.Item label="Y(m)">
-                  <InputNumber
-                    value={selectedFacility?.y || 0}
-                    step={gridStep}
-                    onChange={(v) => {
-                      if (!selectedFacility) return;
-                      const before = layoutRef.current;
-                      if (before) pushHistory(before);
-                      const raw = Number(v || 0);
-                      setFacilityItem(selectedFacility.id, {
-                        y: snapEnabled ? snap(raw, gridStep) : raw,
-                      });
-                    }}
-                    style={{ width: '100%' }}
-                  />
-                </Form.Item>
-                <Form.Item label="旋转(°)">
-                  <InputNumber
-                    value={selectedFacility?.rotation || 0}
-                    step={90}
-                    onChange={(v) => {
-                      if (!selectedFacility) return;
-                      const before = layoutRef.current;
-                      if (before) pushHistory(before);
-                      setFacilityItem(selectedFacility.id, {
-                        rotation: Number(v || 0),
-                      });
-                    }}
-                    style={{ width: '100%' }}
-                  />
-                </Form.Item>
-              </Form>
-            )}
           </Card>
         </div>
 
@@ -3192,6 +2987,256 @@ const DatacenterLayoutPage: React.FC = () => {
           </div>
         </Card>
       </div>
+
+      <Drawer
+        title="属性"
+        placement="right"
+        open={!!selected}
+        width={360}
+        mask={false}
+        onClose={() => setSelectionOnly(null)}
+      >
+        {selected && (
+          <>
+            {selected.type === 'cabinet' ? (
+              <Form layout="vertical">
+                <Form.Item label="机柜">
+                  <Input
+                    value={
+                      cabinetMap.get(selected.cabinetId)?.name ||
+                      selected.cabinetId
+                    }
+                    disabled
+                  />
+                </Form.Item>
+                <Form.Item label="X(m)">
+                  <InputNumber
+                    value={selectedCabinetItem?.x || 0}
+                    step={gridStep}
+                    onChange={(v) => {
+                      const before = layoutRef.current;
+                      if (before) pushHistory(before);
+                      const raw = Number(v || 0);
+                      setCabinetItem(selected.cabinetId, {
+                        x: snapEnabled ? snap(raw, gridStep) : raw,
+                      });
+                    }}
+                    style={{ width: '100%' }}
+                  />
+                </Form.Item>
+                <Form.Item label="Y(m)">
+                  <InputNumber
+                    value={selectedCabinetItem?.y || 0}
+                    step={gridStep}
+                    onChange={(v) => {
+                      const before = layoutRef.current;
+                      if (before) pushHistory(before);
+                      const raw = Number(v || 0);
+                      setCabinetItem(selected.cabinetId, {
+                        y: snapEnabled ? snap(raw, gridStep) : raw,
+                      });
+                    }}
+                    style={{ width: '100%' }}
+                  />
+                </Form.Item>
+                <Form.Item label="旋转(°)">
+                  <InputNumber
+                    value={selectedCabinetItem?.rotation || 0}
+                    step={90}
+                    onChange={(v) => {
+                      const before = layoutRef.current;
+                      if (before) pushHistory(before);
+                      setCabinetItem(selected.cabinetId, {
+                        rotation: Number(v || 0),
+                      });
+                    }}
+                    style={{ width: '100%' }}
+                  />
+                </Form.Item>
+              </Form>
+            ) : selected.type === 'zone' ? (
+              <Form layout="vertical">
+                <Form.Item label="类型">
+                  <Select
+                    value={selectedZone?.type}
+                    options={[
+                      { value: 'zone', label: '区域' },
+                      { value: 'hot_aisle', label: '热通道' },
+                      { value: 'cold_aisle', label: '冷通道' },
+                      { value: 'restricted', label: '限制区' },
+                      { value: 'other', label: '其他' },
+                    ]}
+                    onChange={(v) => {
+                      if (!selectedZone) return;
+                      const before = layoutRef.current;
+                      if (before) pushHistory(before);
+                      setZoneItem(selectedZone.id, { type: v as any });
+                    }}
+                  />
+                </Form.Item>
+                <Form.Item label="名称">
+                  <Input
+                    value={selectedZone?.name}
+                    onChange={(e) =>
+                      selectedZone &&
+                      setZoneItem(selectedZone.id, { name: e.target.value })
+                    }
+                  />
+                </Form.Item>
+                <Form.Item label="X(m)">
+                  <InputNumber
+                    value={selectedZone?.x || 0}
+                    step={gridStep}
+                    onChange={(v) => {
+                      if (!selectedZone) return;
+                      const before = layoutRef.current;
+                      if (before) pushHistory(before);
+                      const raw = Number(v || 0);
+                      setZoneItem(selectedZone.id, {
+                        x: snapEnabled ? snap(raw, gridStep) : raw,
+                      });
+                    }}
+                    style={{ width: '100%' }}
+                  />
+                </Form.Item>
+                <Form.Item label="Y(m)">
+                  <InputNumber
+                    value={selectedZone?.y || 0}
+                    step={gridStep}
+                    onChange={(v) => {
+                      if (!selectedZone) return;
+                      const before = layoutRef.current;
+                      if (before) pushHistory(before);
+                      const raw = Number(v || 0);
+                      setZoneItem(selectedZone.id, {
+                        y: snapEnabled ? snap(raw, gridStep) : raw,
+                      });
+                    }}
+                    style={{ width: '100%' }}
+                  />
+                </Form.Item>
+                <Form.Item label="宽(m)">
+                  <InputNumber
+                    value={selectedZone?.width || 0}
+                    step={gridStep}
+                    min={gridStep}
+                    onChange={(v) => {
+                      if (!selectedZone) return;
+                      const before = layoutRef.current;
+                      if (before) pushHistory(before);
+                      const raw = Math.max(gridStep, Number(v || 0));
+                      setZoneItem(selectedZone.id, {
+                        width: snapEnabled
+                          ? Math.max(gridStep, snap(raw, gridStep))
+                          : raw,
+                      });
+                    }}
+                    style={{ width: '100%' }}
+                  />
+                </Form.Item>
+                <Form.Item label="高(m)">
+                  <InputNumber
+                    value={selectedZone?.height || 0}
+                    step={gridStep}
+                    min={gridStep}
+                    onChange={(v) => {
+                      if (!selectedZone) return;
+                      const before = layoutRef.current;
+                      if (before) pushHistory(before);
+                      const raw = Math.max(gridStep, Number(v || 0));
+                      setZoneItem(selectedZone.id, {
+                        height: snapEnabled
+                          ? Math.max(gridStep, snap(raw, gridStep))
+                          : raw,
+                      });
+                    }}
+                    style={{ width: '100%' }}
+                  />
+                </Form.Item>
+                <Form.Item label="旋转(°)">
+                  <InputNumber
+                    value={selectedZone?.rotation || 0}
+                    step={90}
+                    onChange={(v) => {
+                      if (!selectedZone) return;
+                      const before = layoutRef.current;
+                      if (before) pushHistory(before);
+                      setZoneItem(selectedZone.id, {
+                        rotation: Number(v || 0),
+                      });
+                    }}
+                    style={{ width: '100%' }}
+                  />
+                </Form.Item>
+              </Form>
+            ) : (
+              <Form layout="vertical">
+                <Form.Item label="类型">
+                  <Input value={selectedFacility?.type} disabled />
+                </Form.Item>
+                <Form.Item label="名称">
+                  <Input
+                    value={selectedFacility?.name}
+                    onChange={(e) =>
+                      selectedFacility &&
+                      setFacilityItem(selectedFacility.id, {
+                        name: e.target.value,
+                      })
+                    }
+                  />
+                </Form.Item>
+                <Form.Item label="X(m)">
+                  <InputNumber
+                    value={selectedFacility?.x || 0}
+                    step={gridStep}
+                    onChange={(v) => {
+                      if (!selectedFacility) return;
+                      const before = layoutRef.current;
+                      if (before) pushHistory(before);
+                      const raw = Number(v || 0);
+                      setFacilityItem(selectedFacility.id, {
+                        x: snapEnabled ? snap(raw, gridStep) : raw,
+                      });
+                    }}
+                    style={{ width: '100%' }}
+                  />
+                </Form.Item>
+                <Form.Item label="Y(m)">
+                  <InputNumber
+                    value={selectedFacility?.y || 0}
+                    step={gridStep}
+                    onChange={(v) => {
+                      if (!selectedFacility) return;
+                      const before = layoutRef.current;
+                      if (before) pushHistory(before);
+                      const raw = Number(v || 0);
+                      setFacilityItem(selectedFacility.id, {
+                        y: snapEnabled ? snap(raw, gridStep) : raw,
+                      });
+                    }}
+                    style={{ width: '100%' }}
+                  />
+                </Form.Item>
+                <Form.Item label="旋转(°)">
+                  <InputNumber
+                    value={selectedFacility?.rotation || 0}
+                    step={90}
+                    onChange={(v) => {
+                      if (!selectedFacility) return;
+                      const before = layoutRef.current;
+                      if (before) pushHistory(before);
+                      setFacilityItem(selectedFacility.id, {
+                        rotation: Number(v || 0),
+                      });
+                    }}
+                    style={{ width: '100%' }}
+                  />
+                </Form.Item>
+              </Form>
+            )}
+          </>
+        )}
+      </Drawer>
 
       <Modal
         title="导入/导出布局 JSON"
