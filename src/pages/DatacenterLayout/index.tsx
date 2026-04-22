@@ -85,6 +85,25 @@ function uid(prefix: string) {
   return `${prefix}_${Math.random().toString(36).slice(2)}_${Date.now()}`;
 }
 
+function smartSnapValue(
+  value: number,
+  candidates: number[],
+  threshold: number,
+): { value: number; snapped: boolean } {
+  let best = value;
+  let bestDelta = Number.POSITIVE_INFINITY;
+  for (let i = 0; i < candidates.length; i++) {
+    const c = candidates[i];
+    const d = Math.abs(c - value);
+    if (d < bestDelta) {
+      bestDelta = d;
+      best = c;
+    }
+  }
+  if (bestDelta <= threshold) return { value: best, snapped: true };
+  return { value, snapped: false };
+}
+
 function facilityIcon(type: IDC.LayoutFacilityType) {
   const size = 18;
   switch (type) {
@@ -159,6 +178,7 @@ const DatacenterLayoutPage: React.FC = () => {
     width: number;
     height: number;
   } | null>(null);
+  const [guides, setGuides] = useState<{ x?: number; y?: number } | null>(null);
 
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const layoutRef = useRef<IDC.DatacenterLayout | null>(null);
@@ -602,6 +622,7 @@ const DatacenterLayoutPage: React.FC = () => {
       if (!drag) return;
 
       if (drag.kind === 'pan') {
+        setGuides(null);
         const dx = e.clientX - drag.startClientX;
         const dy = e.clientY - drag.startClientY;
         setOffset({ x: drag.startOffsetX + dx, y: drag.startOffsetY + dy });
@@ -622,17 +643,65 @@ const DatacenterLayoutPage: React.FC = () => {
         return;
       }
 
+      const curLayout = layoutRef.current;
+      const snapThreshold = 0.15;
+      const candidatesX: number[] = [];
+      const candidatesY: number[] = [];
+      if (snapEnabled && curLayout) {
+        for (let i = 0; i < cabinetItems.length; i++) {
+          const c = cabinetItems[i];
+          if (selection.cabinets.includes(c.cabinetId)) continue;
+          candidatesX.push(c.x);
+          candidatesY.push(c.y);
+        }
+        for (let i = 0; i < curLayout.zones.length; i++) {
+          const z = curLayout.zones[i];
+          if (selection.zones.includes(z.id)) continue;
+          candidatesX.push(z.x);
+          candidatesY.push(z.y);
+        }
+        for (let i = 0; i < curLayout.facilities.length; i++) {
+          const f = curLayout.facilities[i];
+          if (selection.facilities.includes(f.id)) continue;
+          candidatesX.push(f.x);
+          candidatesY.push(f.y);
+        }
+      }
+
       if (drag.kind === 'cabinet' && drag.cabinetId) {
         const dx = (e.clientX - drag.startClientX) / scale / pxPerMeter;
         const dy = (e.clientY - drag.startClientY) / scale / pxPerMeter;
         if (drag.snapshot) {
+          let dx2 = dx;
+          let dy2 = dy;
+          const anchor = drag.snapshot.cabinets[drag.cabinetId];
+          if (snapEnabled && anchor) {
+            const sx = smartSnapValue(
+              anchor.x + dx,
+              candidatesX,
+              snapThreshold,
+            );
+            const sy = smartSnapValue(
+              anchor.y + dy,
+              candidatesY,
+              snapThreshold,
+            );
+            dx2 = sx.value - anchor.x;
+            dy2 = sy.value - anchor.y;
+            setGuides({
+              x: sx.snapped ? sx.value : undefined,
+              y: sy.snapped ? sy.value : undefined,
+            });
+          } else {
+            setGuides(null);
+          }
           setLayout((prev) => {
             if (!prev) return prev;
             const cabinetsNext = prev.cabinets.map((c) => {
               const snap0 = drag.snapshot?.cabinets[c.cabinetId];
               if (!snap0) return c;
-              const x = snap0.x + dx;
-              const y = snap0.y + dy;
+              const x = snap0.x + dx2;
+              const y = snap0.y + dy2;
               return {
                 ...c,
                 x: snapEnabled ? snap(x, gridStep) : x,
@@ -642,8 +711,8 @@ const DatacenterLayoutPage: React.FC = () => {
             const zonesNext = prev.zones.map((z) => {
               const snap0 = drag.snapshot?.zones[z.id];
               if (!snap0) return z;
-              const x = snap0.x + dx;
-              const y = snap0.y + dy;
+              const x = snap0.x + dx2;
+              const y = snap0.y + dy2;
               return {
                 ...z,
                 x: snapEnabled ? snap(x, gridStep) : x,
@@ -653,8 +722,8 @@ const DatacenterLayoutPage: React.FC = () => {
             const facilitiesNext = prev.facilities.map((f) => {
               const snap0 = drag.snapshot?.facilities[f.id];
               if (!snap0) return f;
-              const x = snap0.x + dx;
-              const y = snap0.y + dy;
+              const x = snap0.x + dx2;
+              const y = snap0.y + dy2;
               return {
                 ...f,
                 x: snapEnabled ? snap(x, gridStep) : x,
@@ -671,9 +740,22 @@ const DatacenterLayoutPage: React.FC = () => {
         } else {
           const rawX = (drag.startX || 0) + dx;
           const rawY = (drag.startY || 0) + dy;
-          const nextX = snapEnabled ? snap(rawX, gridStep) : rawX;
-          const nextY = snapEnabled ? snap(rawY, gridStep) : rawY;
-          setCabinetItem(drag.cabinetId, { x: nextX, y: nextY });
+          if (snapEnabled && candidatesX.length) {
+            const sx = smartSnapValue(rawX, candidatesX, snapThreshold);
+            const sy = smartSnapValue(rawY, candidatesY, snapThreshold);
+            const nextX = snapEnabled ? snap(sx.value, gridStep) : sx.value;
+            const nextY = snapEnabled ? snap(sy.value, gridStep) : sy.value;
+            setGuides({
+              x: sx.snapped ? sx.value : undefined,
+              y: sy.snapped ? sy.value : undefined,
+            });
+            setCabinetItem(drag.cabinetId, { x: nextX, y: nextY });
+          } else {
+            setGuides(null);
+            const nextX = snapEnabled ? snap(rawX, gridStep) : rawX;
+            const nextY = snapEnabled ? snap(rawY, gridStep) : rawY;
+            setCabinetItem(drag.cabinetId, { x: nextX, y: nextY });
+          }
         }
         return;
       }
@@ -682,13 +764,36 @@ const DatacenterLayoutPage: React.FC = () => {
         const dx = (e.clientX - drag.startClientX) / scale / pxPerMeter;
         const dy = (e.clientY - drag.startClientY) / scale / pxPerMeter;
         if (drag.snapshot) {
+          let dx2 = dx;
+          let dy2 = dy;
+          const anchor = drag.snapshot.facilities[drag.id];
+          if (snapEnabled && anchor) {
+            const sx = smartSnapValue(
+              anchor.x + dx,
+              candidatesX,
+              snapThreshold,
+            );
+            const sy = smartSnapValue(
+              anchor.y + dy,
+              candidatesY,
+              snapThreshold,
+            );
+            dx2 = sx.value - anchor.x;
+            dy2 = sy.value - anchor.y;
+            setGuides({
+              x: sx.snapped ? sx.value : undefined,
+              y: sy.snapped ? sy.value : undefined,
+            });
+          } else {
+            setGuides(null);
+          }
           setLayout((prev) => {
             if (!prev) return prev;
             const cabinetsNext = prev.cabinets.map((c) => {
               const snap0 = drag.snapshot?.cabinets[c.cabinetId];
               if (!snap0) return c;
-              const x = snap0.x + dx;
-              const y = snap0.y + dy;
+              const x = snap0.x + dx2;
+              const y = snap0.y + dy2;
               return {
                 ...c,
                 x: snapEnabled ? snap(x, gridStep) : x,
@@ -698,8 +803,8 @@ const DatacenterLayoutPage: React.FC = () => {
             const zonesNext = prev.zones.map((z) => {
               const snap0 = drag.snapshot?.zones[z.id];
               if (!snap0) return z;
-              const x = snap0.x + dx;
-              const y = snap0.y + dy;
+              const x = snap0.x + dx2;
+              const y = snap0.y + dy2;
               return {
                 ...z,
                 x: snapEnabled ? snap(x, gridStep) : x,
@@ -709,8 +814,8 @@ const DatacenterLayoutPage: React.FC = () => {
             const facilitiesNext = prev.facilities.map((f) => {
               const snap0 = drag.snapshot?.facilities[f.id];
               if (!snap0) return f;
-              const x = snap0.x + dx;
-              const y = snap0.y + dy;
+              const x = snap0.x + dx2;
+              const y = snap0.y + dy2;
               return {
                 ...f,
                 x: snapEnabled ? snap(x, gridStep) : x,
@@ -727,9 +832,22 @@ const DatacenterLayoutPage: React.FC = () => {
         } else {
           const rawX = (drag.startX || 0) + dx;
           const rawY = (drag.startY || 0) + dy;
-          const nextX = snapEnabled ? snap(rawX, gridStep) : rawX;
-          const nextY = snapEnabled ? snap(rawY, gridStep) : rawY;
-          setFacilityItem(drag.id, { x: nextX, y: nextY });
+          if (snapEnabled && candidatesX.length) {
+            const sx = smartSnapValue(rawX, candidatesX, snapThreshold);
+            const sy = smartSnapValue(rawY, candidatesY, snapThreshold);
+            const nextX = snapEnabled ? snap(sx.value, gridStep) : sx.value;
+            const nextY = snapEnabled ? snap(sy.value, gridStep) : sy.value;
+            setGuides({
+              x: sx.snapped ? sx.value : undefined,
+              y: sy.snapped ? sy.value : undefined,
+            });
+            setFacilityItem(drag.id, { x: nextX, y: nextY });
+          } else {
+            setGuides(null);
+            const nextX = snapEnabled ? snap(rawX, gridStep) : rawX;
+            const nextY = snapEnabled ? snap(rawY, gridStep) : rawY;
+            setFacilityItem(drag.id, { x: nextX, y: nextY });
+          }
         }
         return;
       }
@@ -738,13 +856,36 @@ const DatacenterLayoutPage: React.FC = () => {
         const dx = (e.clientX - drag.startClientX) / scale / pxPerMeter;
         const dy = (e.clientY - drag.startClientY) / scale / pxPerMeter;
         if (drag.snapshot) {
+          let dx2 = dx;
+          let dy2 = dy;
+          const anchor = drag.snapshot.zones[drag.id];
+          if (snapEnabled && anchor) {
+            const sx = smartSnapValue(
+              anchor.x + dx,
+              candidatesX,
+              snapThreshold,
+            );
+            const sy = smartSnapValue(
+              anchor.y + dy,
+              candidatesY,
+              snapThreshold,
+            );
+            dx2 = sx.value - anchor.x;
+            dy2 = sy.value - anchor.y;
+            setGuides({
+              x: sx.snapped ? sx.value : undefined,
+              y: sy.snapped ? sy.value : undefined,
+            });
+          } else {
+            setGuides(null);
+          }
           setLayout((prev) => {
             if (!prev) return prev;
             const cabinetsNext = prev.cabinets.map((c) => {
               const snap0 = drag.snapshot?.cabinets[c.cabinetId];
               if (!snap0) return c;
-              const x = snap0.x + dx;
-              const y = snap0.y + dy;
+              const x = snap0.x + dx2;
+              const y = snap0.y + dy2;
               return {
                 ...c,
                 x: snapEnabled ? snap(x, gridStep) : x,
@@ -754,8 +895,8 @@ const DatacenterLayoutPage: React.FC = () => {
             const zonesNext = prev.zones.map((z) => {
               const snap0 = drag.snapshot?.zones[z.id];
               if (!snap0) return z;
-              const x = snap0.x + dx;
-              const y = snap0.y + dy;
+              const x = snap0.x + dx2;
+              const y = snap0.y + dy2;
               return {
                 ...z,
                 x: snapEnabled ? snap(x, gridStep) : x,
@@ -765,8 +906,8 @@ const DatacenterLayoutPage: React.FC = () => {
             const facilitiesNext = prev.facilities.map((f) => {
               const snap0 = drag.snapshot?.facilities[f.id];
               if (!snap0) return f;
-              const x = snap0.x + dx;
-              const y = snap0.y + dy;
+              const x = snap0.x + dx2;
+              const y = snap0.y + dy2;
               return {
                 ...f,
                 x: snapEnabled ? snap(x, gridStep) : x,
@@ -783,9 +924,22 @@ const DatacenterLayoutPage: React.FC = () => {
         } else {
           const rawX = (drag.startX || 0) + dx;
           const rawY = (drag.startY || 0) + dy;
-          const nextX = snapEnabled ? snap(rawX, gridStep) : rawX;
-          const nextY = snapEnabled ? snap(rawY, gridStep) : rawY;
-          setZoneItem(drag.id, { x: nextX, y: nextY });
+          if (snapEnabled && candidatesX.length) {
+            const sx = smartSnapValue(rawX, candidatesX, snapThreshold);
+            const sy = smartSnapValue(rawY, candidatesY, snapThreshold);
+            const nextX = snapEnabled ? snap(sx.value, gridStep) : sx.value;
+            const nextY = snapEnabled ? snap(sy.value, gridStep) : sy.value;
+            setGuides({
+              x: sx.snapped ? sx.value : undefined,
+              y: sy.snapped ? sy.value : undefined,
+            });
+            setZoneItem(drag.id, { x: nextX, y: nextY });
+          } else {
+            setGuides(null);
+            const nextX = snapEnabled ? snap(rawX, gridStep) : rawX;
+            const nextY = snapEnabled ? snap(rawY, gridStep) : rawY;
+            setZoneItem(drag.id, { x: nextX, y: nextY });
+          }
         }
         return;
       }
@@ -870,6 +1024,10 @@ const DatacenterLayoutPage: React.FC = () => {
       setZoneItem,
       setFacilityItem,
       snapEnabled,
+      cabinetItems,
+      selection.cabinets,
+      selection.zones,
+      selection.facilities,
     ],
   );
 
@@ -880,6 +1038,7 @@ const DatacenterLayoutPage: React.FC = () => {
 
       if (drag.kind === 'box_select') {
         setSelectBox(null);
+        setGuides(null);
         const cur = layoutRef.current;
         if (cur) {
           const end = toWorld(e.clientX, e.clientY);
@@ -929,6 +1088,7 @@ const DatacenterLayoutPage: React.FC = () => {
         }
       }
 
+      setGuides(null);
       if (drag.beforeLayout) pushHistory(drag.beforeLayout);
       dragRef.current = null;
       try {
@@ -1476,6 +1636,13 @@ const DatacenterLayoutPage: React.FC = () => {
         return;
       }
 
+      if (mod && key === 'd') {
+        e.preventDefault();
+        copySelectionToClipboard();
+        pasteSelectionFromClipboard();
+        return;
+      }
+
       if (key === 'escape') {
         setTool('select');
         setSelectionOnly(null);
@@ -1986,6 +2153,22 @@ const DatacenterLayoutPage: React.FC = () => {
             onPointerUp={onPointerUpWrap}
             onWheel={onWheel}
           >
+            {guides?.x !== undefined && (
+              <div
+                className={styles.guideV}
+                style={{
+                  left: offset.x + guides.x * pxPerMeter * scale,
+                }}
+              />
+            )}
+            {guides?.y !== undefined && (
+              <div
+                className={styles.guideH}
+                style={{
+                  top: offset.y + guides.y * pxPerMeter * scale,
+                }}
+              />
+            )}
             {selectBox && (
               <div
                 className={styles.selectBox}
