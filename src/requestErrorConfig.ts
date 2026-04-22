@@ -1,5 +1,6 @@
-﻿import type { RequestOptions } from '@@/plugin-request/request';
+import type { RequestOptions } from '@@/plugin-request/request';
 import type { RequestConfig } from '@umijs/max';
+import { history } from '@umijs/max';
 import { message, notification } from 'antd';
 
 // 错误处理方案： 错误类型
@@ -17,6 +18,25 @@ interface ResponseStructure {
   errorCode?: number;
   errorMessage?: string;
   showType?: ErrorShowType;
+}
+
+const loginPath = '/user/login';
+
+function getToken(): string | null {
+  if (typeof window === 'undefined') return null;
+  return localStorage.getItem('token');
+}
+
+function clearToken(): void {
+  if (typeof window === 'undefined') return;
+  localStorage.removeItem('token');
+}
+
+function redirectToLogin(): void {
+  const currentPath = history.location.pathname + history.location.search;
+  if (history.location.pathname === loginPath) return;
+  const redirect = encodeURIComponent(currentPath);
+  history.replace(`${loginPath}?redirect=${redirect}`);
 }
 
 /**
@@ -63,16 +83,36 @@ export const errorConfig: RequestConfig = {
               });
               break;
             case ErrorShowType.REDIRECT:
-              // TODO: redirect
-              break;
+              clearToken();
+              redirectToLogin();
+              return;
             default:
               message.error(errorMessage);
           }
         }
       } else if (error.response) {
-        // Axios 的错误
-        // 请求成功发出且服务器也响应了状态码，但状态代码超出了 2xx 的范围
-        message.error(`Response status:${error.response.status}`);
+        const status = error.response.status;
+        if (status === 401) {
+          clearToken();
+          redirectToLogin();
+          return;
+        }
+        if (status === 403) {
+          notification.error({
+            message: '无权限访问',
+            description: '你没有访问该资源的权限，请联系管理员。',
+          });
+          history.push('/403');
+          return;
+        }
+        if (status >= 500) {
+          notification.error({
+            message: '服务异常',
+            description: `Response status: ${status}`,
+          });
+          return;
+        }
+        message.error(`Response status: ${status}`);
       } else if (error.request) {
         // 请求已经成功发起，但没有收到响应
         // \`error.request\` 在浏览器中是 XMLHttpRequest 的实例，
@@ -89,7 +129,7 @@ export const errorConfig: RequestConfig = {
   requestInterceptors: [
     (config: RequestOptions) => {
       // 拦截请求配置，进行个性化处理。
-      const token = localStorage.getItem('token');
+      const token = getToken();
       const headers = config?.headers || {};
       if (token) {
         headers['Authorization'] = `Bearer ${token}`;
