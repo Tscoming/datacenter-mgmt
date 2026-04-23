@@ -15,11 +15,15 @@ import {
   useState,
 } from 'react';
 import * as THREE from 'three';
-import { AnimationRegistryProvider } from './AnimationRegistry';
+import {
+  AnimationRegistryProvider,
+  type SinePulseParams,
+  useAnimationRegistry,
+} from './AnimationRegistry';
 import { Device3D } from './DeviceModels';
 import { HeatmapOverlay } from './HeatmapOverlay';
 import type { InfoDensity } from './InfoDisplay';
-import { InstancedDeviceRenderer } from './InstancedDevices';
+import { InstancedCabinets } from './InstancedCabinets';
 import { KeyboardController } from './KeyboardControls';
 import {
   calculateLODLevel,
@@ -105,14 +109,10 @@ interface CabinetProps {
     device: IDC.Device,
     position: [number, number, number],
   ) => void;
-  // 性能优化配置
-  // 性能优化配置
-  lodEnabled?: boolean;
-  lodThresholds?: { high: number; medium: number; low: number };
+  lodLevel?: LODLevel;
   // 信息密度
   infoDensity?: InfoDensity;
-  // 框选区域
-  selectionBox?: SelectionBox | null;
+  showLabel?: boolean;
 }
 
 // 单个机柜组件
@@ -128,23 +128,24 @@ export const Cabinet3D: React.FC<CabinetProps> = ({
   onDoubleClick,
   onDeviceSelect,
   onDeviceDoubleClick,
-  lodEnabled = true,
-  lodThresholds = DEFAULT_LOD_THRESHOLDS,
+  lodLevel = LODLevel.HIGH,
   infoDensity = 'normal',
+  showLabel = true,
 }) => {
-  const { camera } = useThree();
   const groupRef = useRef<THREE.Group>(null);
   const [hovered, setHovered] = useState(false);
   const [hoveredDevice, setHoveredDevice] = useState<IDC.Device | null>(null);
   const statusLightMaterialRef = useRef<THREE.MeshStandardMaterial | null>(
     null,
   );
-  const lodLevelRef = useRef<LODLevel>(LODLevel.HIGH);
-  const highDetailRef = useRef<THREE.Group>(null);
-  const mediumDetailRef = useRef<THREE.Group>(null);
-  const lowDetailRef = useRef<THREE.Group>(null);
-  const frameCount = useRef(0);
-  const positionVec = useMemo(() => new THREE.Vector3(...position), [position]);
+  const animIdRef = useRef<string | null>(null);
+  const pulseParamsRef = useRef<SinePulseParams>({
+    enabled: true,
+    base: 0.8,
+    amp: 0.7,
+    speed: 2,
+  });
+  const registry = useAnimationRegistry();
   const templateMap = useMemo(
     () => new Map(templates.map((t) => [t.id, t] as const)),
     [templates],
@@ -154,36 +155,6 @@ export const Cabinet3D: React.FC<CabinetProps> = ({
   const cabinetHeight = cabinet.uHeight * 0.0445; // 1U = 44.5mm
   const cabinetWidth = 0.6;
   const cabinetDepth = 1.0;
-
-  const devicePositions = useMemo(() => {
-    const map: Record<string, [number, number, number]> = {};
-    for (const device of devices) {
-      const deviceY =
-        (device.startU - 1) * 0.0445 -
-        cabinetHeight / 2 +
-        ((device.endU - device.startU + 1) * 0.0445) / 2;
-      map[device.id] = [0, deviceY, cabinetDepth / 2 - 0.05];
-    }
-    return map;
-  }, [devices, cabinetDepth, cabinetHeight]);
-
-  const deviceDimensions = useMemo(() => {
-    const map: Record<
-      string,
-      { width: number; height: number; depth: number }
-    > = {};
-    const deviceWidth = cabinetWidth - 0.06;
-    const deviceDepth = 0.08;
-    for (const device of devices) {
-      const deviceHeight = (device.endU - device.startU + 1) * 0.0445 - 0.005;
-      map[device.id] = {
-        width: deviceWidth,
-        height: deviceHeight,
-        depth: deviceDepth,
-      };
-    }
-    return map;
-  }, [devices, cabinetWidth]);
 
   // 状态颜色
   const statusColors: Record<string, string> = {
@@ -204,52 +175,26 @@ export const Cabinet3D: React.FC<CabinetProps> = ({
   useEffect(() => {
     const mat = statusLightMaterialRef.current;
     if (!mat) return;
-    if (!isWarning) mat.emissiveIntensity = 0.8;
-  }, [isWarning]);
-
-  const applyLODVisibility = useCallback((level: LODLevel) => {
-    if (highDetailRef.current)
-      highDetailRef.current.visible = level === LODLevel.HIGH;
-    if (mediumDetailRef.current)
-      mediumDetailRef.current.visible = level === LODLevel.MEDIUM;
-    if (lowDetailRef.current)
-      lowDetailRef.current.visible = level === LODLevel.LOW;
-    if (level === LODLevel.HIDDEN) {
-      if (highDetailRef.current) highDetailRef.current.visible = false;
-      if (mediumDetailRef.current) mediumDetailRef.current.visible = false;
-      if (lowDetailRef.current) lowDetailRef.current.visible = false;
+    if (isWarning) {
+      pulseParamsRef.current.speed = cabinet.status === 'error' ? 4 : 2;
+      if (!animIdRef.current) {
+        animIdRef.current = registry.register(mat, pulseParamsRef);
+      }
+      return;
     }
-  }, []);
+    if (animIdRef.current) {
+      registry.unregister(animIdRef.current);
+      animIdRef.current = null;
+    }
+    mat.emissiveIntensity = 0.8;
+  }, [cabinet.status, isWarning, registry]);
 
   useEffect(() => {
-    applyLODVisibility(lodLevelRef.current);
-  }, [applyLODVisibility]);
-
-  // 使用useFrame实现LOD计算和闪烁动画
-  useFrame(({ clock }) => {
-    if (!lodEnabled && !isWarning) return;
-
-    // LOD 计算（每10帧更新一次，减少开销）
-    if (lodEnabled) {
-      frameCount.current++;
-      if (frameCount.current % 10 === 0) {
-        const distance = camera.position.distanceTo(positionVec);
-        const newLevel = calculateLODLevel(distance, lodThresholds);
-        if (newLevel !== lodLevelRef.current) {
-          lodLevelRef.current = newLevel;
-          applyLODVisibility(newLevel);
-        }
-      }
-    }
-
-    // 闪烁动画
-    if (!isWarning) return;
-    const mat = statusLightMaterialRef.current;
-    if (!mat) return;
-    const speed = cabinet.status === 'error' ? 4 : 2;
-    const newIntensity = 0.8 + Math.sin(clock.getElapsedTime() * speed) * 0.7;
-    mat.emissiveIntensity = Math.max(0.3, Math.min(1.5, newIntensity));
-  });
+    return () => {
+      if (animIdRef.current) registry.unregister(animIdRef.current);
+      animIdRef.current = null;
+    };
+  }, [registry]);
 
   // 机柜主体颜色
   const getBodyColor = () => {
@@ -344,28 +289,7 @@ export const Cabinet3D: React.FC<CabinetProps> = ({
       </mesh>
 
       {/* 使用LOD优化的3D设备模型渲染 */}
-      <group ref={lowDetailRef} visible={false}>
-        <InstancedDeviceRenderer
-          devices={devices}
-          templates={templates}
-          devicePositions={devicePositions}
-          deviceDimensions={deviceDimensions}
-          onSelectDevice={(d) => {
-            setHoveredDevice(d);
-            onDeviceSelect(d);
-          }}
-          onDoubleClickDevice={(d, pos) => {
-            onDeviceDoubleClick(d, [
-              position[0] + pos[0],
-              position[1] + pos[1],
-              position[2] + pos[2],
-            ]);
-          }}
-          selectedDeviceId={hoveredDevice?.id || null}
-          highlightedDeviceId={null}
-        />
-      </group>
-      <group ref={mediumDetailRef} visible={false}>
+      <group visible={lodLevel === LODLevel.MEDIUM}>
         {devices.map((device) => {
           const deviceY =
             (device.startU - 1) * 0.0445 -
@@ -406,7 +330,7 @@ export const Cabinet3D: React.FC<CabinetProps> = ({
           );
         })}
       </group>
-      <group ref={highDetailRef}>
+      <group visible={lodLevel === LODLevel.HIGH}>
         {devices.map((device) => {
           const deviceY =
             (device.startU - 1) * 0.0445 -
@@ -451,48 +375,50 @@ export const Cabinet3D: React.FC<CabinetProps> = ({
       </group>
 
       {/* 机柜标签 - 根据信息密度显示不同内容 */}
-      <Html
-        position={[0, cabinetHeight / 2 + 0.1, cabinetDepth / 2]}
-        center
-        distanceFactor={8}
-        zIndexRange={[100, 0]}
-      >
-        <div
-          style={{
-            background: 'rgba(255, 255, 255, 0.9)',
-            padding: infoDensity === 'compact' ? '2px 6px' : '4px 8px',
-            borderRadius: '4px',
-            border: `1px solid ${statusColors[cabinet.status] || '#d9d9d9'}`,
-            fontSize: '12px',
-            whiteSpace: 'nowrap',
-            color: '#333',
-            boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            gap: '2px',
-          }}
+      {showLabel && (
+        <Html
+          position={[0, cabinetHeight / 2 + 0.1, cabinetDepth / 2]}
+          center
+          distanceFactor={8}
+          zIndexRange={[100, 0]}
         >
-          <div style={{ fontWeight: 'bold' }}>{cabinet.name}</div>
+          <div
+            style={{
+              background: 'rgba(255, 255, 255, 0.9)',
+              padding: infoDensity === 'compact' ? '2px 6px' : '4px 8px',
+              borderRadius: '4px',
+              border: `1px solid ${statusColors[cabinet.status] || '#d9d9d9'}`,
+              fontSize: '12px',
+              whiteSpace: 'nowrap',
+              color: '#333',
+              boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              gap: '2px',
+            }}
+          >
+            <div style={{ fontWeight: 'bold' }}>{cabinet.name}</div>
 
-          {infoDensity !== 'compact' && (
-            <div style={{ fontSize: '10px', color: '#666' }}>
-              {cabinet.code}
-            </div>
-          )}
+            {infoDensity !== 'compact' && (
+              <div style={{ fontSize: '10px', color: '#666' }}>
+                {cabinet.code}
+              </div>
+            )}
 
-          {infoDensity === 'detailed' && (
-            <div style={{ fontSize: '10px', display: 'flex', gap: '4px' }}>
-              <span>
-                使用率: {Math.round((cabinet.usedU / cabinet.uHeight) * 100)}%
-              </span>
-              <span style={{ color: statusColors[cabinet.status] }}>
-                {cabinet.status === 'normal' ? '正常' : '异常'}
-              </span>
-            </div>
-          )}
-        </div>
-      </Html>
+            {infoDensity === 'detailed' && (
+              <div style={{ fontSize: '10px', display: 'flex', gap: '4px' }}>
+                <span>
+                  使用率: {Math.round((cabinet.usedU / cabinet.uHeight) * 100)}%
+                </span>
+                <span style={{ color: statusColors[cabinet.status] }}>
+                  {cabinet.status === 'normal' ? '正常' : '异常'}
+                </span>
+              </div>
+            )}
+          </div>
+        </Html>
+      )}
     </group>
   );
 };
@@ -675,6 +601,59 @@ export const DatacenterScene = forwardRef<
       return rotations;
     }, [cabinets, layout]);
 
+    const deviceById = useMemo(
+      () => new Map(devices.map((d) => [d.id, d] as const)),
+      [devices],
+    );
+
+    const highlightedDeviceCabinetId = useMemo(() => {
+      if (!highlightedDeviceId) return null;
+      return deviceById.get(highlightedDeviceId)?.cabinetId || null;
+    }, [deviceById, highlightedDeviceId]);
+
+    const [cabinetLODById, setCabinetLODById] = useState<
+      Record<string, LODLevel>
+    >({});
+    const cabinetLODRef = useRef<Record<string, LODLevel>>({});
+    const lodFrameRef = useRef(0);
+    const tempVecRef = useRef(new THREE.Vector3());
+
+    useEffect(() => {
+      const init: Record<string, LODLevel> = {};
+      for (const c of cabinets) init[c.id] = LODLevel.HIGH;
+      cabinetLODRef.current = init;
+      setCabinetLODById(init);
+    }, [cabinets]);
+
+    useFrame(() => {
+      lodFrameRef.current++;
+      if (lodFrameRef.current % 10 !== 0) return;
+
+      const thresholds =
+        effectiveConfig.lodThresholds || DEFAULT_LOD_THRESHOLDS;
+      const prev = cabinetLODRef.current;
+      const next: Record<string, LODLevel> = {};
+      let changed = false;
+
+      for (const cab of cabinets) {
+        const p = cabinetPositions[cab.id];
+        if (!p) {
+          next[cab.id] = LODLevel.HIDDEN;
+          if (prev[cab.id] !== LODLevel.HIDDEN) changed = true;
+          continue;
+        }
+        const v = tempVecRef.current.set(p[0], p[1], p[2]);
+        const distance = camera.position.distanceTo(v);
+        const level = calculateLODLevel(distance, thresholds);
+        next[cab.id] = level;
+        if (prev[cab.id] !== level) changed = true;
+      }
+
+      if (!changed) return;
+      cabinetLODRef.current = next;
+      setCabinetLODById(next);
+    });
+
     // 获取机柜内的设备
     const cabinetById = useMemo(
       () => new Map(cabinets.map((c) => [c.id, c] as const)),
@@ -710,12 +689,59 @@ export const DatacenterScene = forwardRef<
       return acc;
     }, [cabinetById, cabinetPositions, devices]);
 
+    const effectiveHighlightedCabinetId =
+      highlightedCabinetId || highlightedDeviceCabinetId;
+
+    const farCabinetInstances = useMemo(() => {
+      const list: {
+        id: string;
+        position: [number, number, number];
+        rotationY: number;
+        width: number;
+        height: number;
+        depth: number;
+        status: string;
+      }[] = [];
+      for (const cab of cabinets) {
+        const level = cabinetLODById[cab.id] || LODLevel.HIGH;
+        if (level !== LODLevel.LOW) continue;
+        const p = cabinetPositions[cab.id];
+        if (!p) continue;
+        list.push({
+          id: cab.id,
+          position: p,
+          rotationY: cabinetRotations[cab.id] || 0,
+          width: 0.6,
+          height: cab.uHeight * 0.0445,
+          depth: 1.0,
+          status: cab.status,
+        });
+      }
+      return list;
+    }, [cabinets, cabinetLODById, cabinetPositions, cabinetRotations]);
+
     // 双击聚焦
     const handleCabinetDoubleClick = useCallback(
       (_cabinet: IDC.Cabinet, position: [number, number, number]) => {
         setCameraTarget(position);
       },
       [],
+    );
+
+    const handleInstancedCabinetClick = useCallback(
+      (cabinetId: string) => {
+        const cab = cabinetById.get(cabinetId);
+        if (cab) onSelectCabinet(cab);
+      },
+      [cabinetById, onSelectCabinet],
+    );
+
+    const handleInstancedCabinetDoubleClick = useCallback(
+      (cabinetId: string, _position: [number, number, number]) => {
+        const p = cabinetPositions[cabinetId];
+        if (p) setCameraTarget(p);
+      },
+      [cabinetPositions],
     );
 
     const handleDeviceDoubleClick = useCallback(
@@ -828,11 +854,28 @@ export const DatacenterScene = forwardRef<
           })}
 
           {/* 渲染机柜 - 使用性能优化配置 */}
+          <InstancedCabinets
+            instances={farCabinetInstances}
+            selectedId={selectedCabinet?.id || null}
+            highlightedId={effectiveHighlightedCabinetId}
+            onClickCabinet={handleInstancedCabinetClick}
+            onDoubleClickCabinet={handleInstancedCabinetDoubleClick}
+          />
+
           {cabinets.map((cabinet) => {
+            const lodLevel = cabinetLODById[cabinet.id] || LODLevel.HIGH;
+            if (lodLevel === LODLevel.LOW || lodLevel === LODLevel.HIDDEN) {
+              return null;
+            }
+
             const cabDevices = getDevicesByCabinet(cabinet.id);
-            const highlighted =
-              highlightedCabinetId === cabinet.id ||
-              cabDevices.some((d) => d.id === highlightedDeviceId);
+            const highlighted = effectiveHighlightedCabinetId === cabinet.id;
+            const showLabel =
+              lodLevel === LODLevel.HIGH ||
+              (infoDensity === 'detailed' && lodLevel === LODLevel.MEDIUM) ||
+              selectedCabinet?.id === cabinet.id ||
+              highlighted;
+
             return (
               <Cabinet3D
                 key={cabinet.id}
@@ -847,9 +890,9 @@ export const DatacenterScene = forwardRef<
                 onDoubleClick={handleCabinetDoubleClick}
                 onDeviceSelect={onSelectDevice}
                 onDeviceDoubleClick={handleDeviceDoubleClick}
-                lodEnabled={effectiveConfig.enableLOD}
-                lodThresholds={effectiveConfig.lodThresholds}
+                lodLevel={lodLevel}
                 infoDensity={infoDensity}
+                showLabel={showLabel}
               />
             );
           })}

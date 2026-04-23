@@ -71,9 +71,13 @@ export function AnimationRegistryProvider({
 
 export function useAnimationRegistry() {
   const ctx = useContext(AnimationRegistryContext);
-  if (!ctx)
-    throw new Error(
-      'useAnimationRegistry must be used within AnimationRegistryProvider',
-    );
-  return ctx;
+  return (
+    ctx || {
+      register: (material, paramsRef) => {
+        material.emissiveIntensity = paramsRef.current.base;
+        return `${Date.now()}_${Math.random().toString(36).slice(2)}`;
+      },
+      unregister: () => {},
+    }
+  );
 }
