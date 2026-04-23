@@ -15,15 +15,20 @@ import {
   useState,
 } from 'react';
 import * as THREE from 'three';
+import {
+  AnimationRegistryProvider,
+  type SinePulseParams,
+  useAnimationRegistry,
+} from './AnimationRegistry';
 import { Device3D } from './DeviceModels';
 import { HeatmapOverlay } from './HeatmapOverlay';
 import type { InfoDensity } from './InfoDisplay';
+import { InstancedCabinets } from './InstancedCabinets';
 import { KeyboardController } from './KeyboardControls';
 import {
   calculateLODLevel,
   DEFAULT_LOD_THRESHOLDS,
   LODLevel,
-  LowDetailDevice,
   MediumDetailDevice,
 } from './LODManager';
 import {
@@ -104,14 +109,10 @@ interface CabinetProps {
     device: IDC.Device,
     position: [number, number, number],
   ) => void;
-  // 性能优化配置
-  // 性能优化配置
-  lodEnabled?: boolean;
-  lodThresholds?: { high: number; medium: number; low: number };
+  lodLevel?: LODLevel;
   // 信息密度
   infoDensity?: InfoDensity;
-  // 框选区域
-  selectionBox?: SelectionBox | null;
+  showLabel?: boolean;
 }
 
 // 单个机柜组件
@@ -127,18 +128,28 @@ export const Cabinet3D: React.FC<CabinetProps> = ({
   onDoubleClick,
   onDeviceSelect,
   onDeviceDoubleClick,
-  lodEnabled = true,
-  lodThresholds = DEFAULT_LOD_THRESHOLDS,
+  lodLevel = LODLevel.HIGH,
   infoDensity = 'normal',
+  showLabel = true,
 }) => {
-  const { camera } = useThree();
   const groupRef = useRef<THREE.Group>(null);
   const [hovered, setHovered] = useState(false);
   const [hoveredDevice, setHoveredDevice] = useState<IDC.Device | null>(null);
-  const [flashIntensity, setFlashIntensity] = useState(0.8);
-  const [lodLevel, setLodLevel] = useState<LODLevel>(LODLevel.HIGH);
-  const frameCount = useRef(0);
-  const positionVec = useMemo(() => new THREE.Vector3(...position), [position]);
+  const statusLightMaterialRef = useRef<THREE.MeshStandardMaterial | null>(
+    null,
+  );
+  const animIdRef = useRef<string | null>(null);
+  const pulseParamsRef = useRef<SinePulseParams>({
+    enabled: true,
+    base: 0.8,
+    amp: 0.7,
+    speed: 2,
+  });
+  const registry = useAnimationRegistry();
+  const templateMap = useMemo(
+    () => new Map(templates.map((t) => [t.id, t] as const)),
+    [templates],
+  );
 
   // 机柜尺寸（按U位缩放）
   const cabinetHeight = cabinet.uHeight * 0.0445; // 1U = 44.5mm
@@ -161,27 +172,29 @@ export const Cabinet3D: React.FC<CabinetProps> = ({
   // 告警闪烁效果
   const isWarning = cabinet.status === 'warning' || cabinet.status === 'error';
 
-  // 使用useFrame实现LOD计算和闪烁动画
-  useFrame(({ clock }) => {
-    // LOD 计算（每10帧更新一次，减少开销）
-    if (lodEnabled) {
-      frameCount.current++;
-      if (frameCount.current % 10 === 0) {
-        const distance = camera.position.distanceTo(positionVec);
-        const newLevel = calculateLODLevel(distance, lodThresholds);
-        if (newLevel !== lodLevel) {
-          setLodLevel(newLevel);
-        }
-      }
-    }
-
-    // 闪烁动画
+  useEffect(() => {
+    const mat = statusLightMaterialRef.current;
+    if (!mat) return;
     if (isWarning) {
-      const speed = cabinet.status === 'error' ? 4 : 2;
-      const newIntensity = 0.8 + Math.sin(clock.getElapsedTime() * speed) * 0.7;
-      setFlashIntensity(Math.max(0.3, Math.min(1.5, newIntensity)));
+      pulseParamsRef.current.speed = cabinet.status === 'error' ? 4 : 2;
+      if (!animIdRef.current) {
+        animIdRef.current = registry.register(mat, pulseParamsRef);
+      }
+      return;
     }
-  });
+    if (animIdRef.current) {
+      registry.unregister(animIdRef.current);
+      animIdRef.current = null;
+    }
+    mat.emissiveIntensity = 0.8;
+  }, [cabinet.status, isWarning, registry]);
+
+  useEffect(() => {
+    return () => {
+      if (animIdRef.current) registry.unregister(animIdRef.current);
+      animIdRef.current = null;
+    };
+  }, [registry]);
 
   // 机柜主体颜色
   const getBodyColor = () => {
@@ -268,62 +281,30 @@ export const Cabinet3D: React.FC<CabinetProps> = ({
       >
         <sphereGeometry args={[0.02, 16, 16]} />
         <meshStandardMaterial
+          ref={statusLightMaterialRef}
           color={statusColors[cabinet.status]}
           emissive={statusColors[cabinet.status]}
-          emissiveIntensity={isWarning ? flashIntensity : 0.8}
+          emissiveIntensity={0.8}
         />
       </mesh>
 
       {/* 使用LOD优化的3D设备模型渲染 */}
-      {devices.map((device) => {
-        const deviceY =
-          (device.startU - 1) * 0.0445 -
-          cabinetHeight / 2 +
-          ((device.endU - device.startU + 1) * 0.0445) / 2;
-        const deviceHeight = (device.endU - device.startU + 1) * 0.0445;
-        const template = templates.find((t) => t.id === device.templateId);
-        const category = template?.category || 'other';
-        const deviceWidth = cabinetWidth - 0.06;
-        const deviceDepth = 0.08;
-        const devicePosition: [number, number, number] = [
-          0,
-          deviceY,
-          cabinetDepth / 2 - 0.05,
-        ];
-
-        // 根据LOD级别选择不同精度的模型
-        if (lodEnabled && lodLevel === LODLevel.HIDDEN) {
-          return null; // 超远距离，不渲染
-        }
-
-        if (lodEnabled && lodLevel === LODLevel.LOW) {
-          // 低精度模型
-          return (
-            <LowDetailDevice
-              key={device.id}
-              position={devicePosition}
-              width={deviceWidth}
-              height={deviceHeight - 0.005}
-              depth={deviceDepth}
-              color={
-                category === 'server'
-                  ? '#5c6b7a'
-                  : category === 'switch'
-                    ? '#2d5a7b'
-                    : '#6b7b8c'
-              }
-              status={device.status}
-              onClick={(e) => {
-                e.stopPropagation();
-                setHoveredDevice(device);
-                onDeviceSelect(device);
-              }}
-            />
-          );
-        }
-
-        if (lodEnabled && lodLevel === LODLevel.MEDIUM) {
-          // 中等精度模型
+      <group visible={lodLevel === LODLevel.MEDIUM}>
+        {devices.map((device) => {
+          const deviceY =
+            (device.startU - 1) * 0.0445 -
+            cabinetHeight / 2 +
+            ((device.endU - device.startU + 1) * 0.0445) / 2;
+          const deviceHeight = (device.endU - device.startU + 1) * 0.0445;
+          const template = templateMap.get(device.templateId);
+          const category = template?.category || 'other';
+          const deviceWidth = cabinetWidth - 0.06;
+          const deviceDepth = 0.08;
+          const devicePosition: [number, number, number] = [
+            0,
+            deviceY,
+            cabinetDepth / 2 - 0.05,
+          ];
           return (
             <MediumDetailDevice
               key={device.id}
@@ -347,79 +328,98 @@ export const Cabinet3D: React.FC<CabinetProps> = ({
               }}
             />
           );
-        }
-
-        // 高精度模型（原始完整模型）
-        return (
-          <Device3D
-            key={device.id}
-            device={device}
-            template={template}
-            category={category}
-            position={devicePosition}
-            height={deviceHeight - 0.005}
-            width={deviceWidth}
-            depth={deviceDepth}
-            selected={hoveredDevice?.id === device.id}
-            onSelect={(d) => {
-              setHoveredDevice(d);
-              onDeviceSelect(d);
-            }}
-            onDoubleClick={(d, _pos) => {
-              const devicePos: [number, number, number] = [
-                position[0],
-                position[1] + deviceY,
-                position[2],
-              ];
-              onDeviceDoubleClick(d, devicePos);
-            }}
-          />
-        );
-      })}
+        })}
+      </group>
+      <group visible={lodLevel === LODLevel.HIGH}>
+        {devices.map((device) => {
+          const deviceY =
+            (device.startU - 1) * 0.0445 -
+            cabinetHeight / 2 +
+            ((device.endU - device.startU + 1) * 0.0445) / 2;
+          const deviceHeight = (device.endU - device.startU + 1) * 0.0445;
+          const template = templateMap.get(device.templateId);
+          const category = template?.category || 'other';
+          const deviceWidth = cabinetWidth - 0.06;
+          const deviceDepth = 0.08;
+          const devicePosition: [number, number, number] = [
+            0,
+            deviceY,
+            cabinetDepth / 2 - 0.05,
+          ];
+          return (
+            <Device3D
+              key={device.id}
+              device={device}
+              template={template}
+              category={category}
+              position={devicePosition}
+              height={deviceHeight - 0.005}
+              width={deviceWidth}
+              depth={deviceDepth}
+              selected={hoveredDevice?.id === device.id}
+              onSelect={(d) => {
+                setHoveredDevice(d);
+                onDeviceSelect(d);
+              }}
+              onDoubleClick={(d, _pos) => {
+                const devicePos: [number, number, number] = [
+                  position[0],
+                  position[1] + deviceY,
+                  position[2],
+                ];
+                onDeviceDoubleClick(d, devicePos);
+              }}
+            />
+          );
+        })}
+      </group>
 
       {/* 机柜标签 - 根据信息密度显示不同内容 */}
-      <Html
-        position={[0, cabinetHeight / 2 + 0.1, cabinetDepth / 2]}
-        center
-        distanceFactor={8}
-        zIndexRange={[100, 0]}
-      >
-        <div
-          style={{
-            background: 'rgba(255, 255, 255, 0.9)',
-            padding: infoDensity === 'compact' ? '2px 6px' : '4px 8px',
-            borderRadius: '4px',
-            border: `1px solid ${statusColors[cabinet.status] || '#d9d9d9'}`,
-            fontSize: '12px',
-            whiteSpace: 'nowrap',
-            color: '#333',
-            boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            gap: '2px',
-          }}
+      {(showLabel || hovered) && (
+        <Html
+          position={[0, cabinetHeight / 2 + 0.1, cabinetDepth / 2]}
+          center
+          distanceFactor={8}
+          zIndexRange={[100, 0]}
         >
-          <div style={{ fontWeight: 'bold' }}>{cabinet.name}</div>
+          <div
+            style={{
+              background: 'rgba(255, 255, 255, 0.9)',
+              padding: infoDensity === 'compact' ? '2px 6px' : '4px 8px',
+              borderRadius: '4px',
+              border: `1px solid ${statusColors[cabinet.status] || '#d9d9d9'}`,
+              fontSize: '12px',
+              whiteSpace: 'nowrap',
+              color: '#333',
+              boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+              pointerEvents: 'none',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              gap: '2px',
+            }}
+          >
+            <div style={{ fontWeight: 'bold' }}>{cabinet.name}</div>
 
-          {infoDensity !== 'compact' && (
-            <div style={{ fontSize: '10px', color: '#666' }}>
-              {cabinet.code}
-            </div>
-          )}
+            {infoDensity !== 'compact' && (
+              <div style={{ fontSize: '10px', color: '#666' }}>
+                {cabinet.code}
+              </div>
+            )}
 
-          {infoDensity === 'detailed' && (
-            <div style={{ fontSize: '10px', display: 'flex', gap: '4px' }}>
-              <span>
-                使用率: {Math.round((cabinet.usedU / cabinet.uHeight) * 100)}%
-              </span>
-              <span style={{ color: statusColors[cabinet.status] }}>
-                {cabinet.status === 'normal' ? '正常' : '异常'}
-              </span>
-            </div>
-          )}
-        </div>
-      </Html>
+            {infoDensity === 'detailed' && (
+              <div style={{ fontSize: '10px', display: 'flex', gap: '4px' }}>
+                <span>
+                  使用率: {Math.round((cabinet.usedU / cabinet.uHeight) * 100)}%
+                </span>
+                <span style={{ color: statusColors[cabinet.status] }}>
+                  {cabinet.status === 'normal' ? '正常' : '异常'}
+                </span>
+              </div>
+            )}
+          </div>
+        </Html>
+      )}
     </group>
   );
 };
@@ -602,10 +602,156 @@ export const DatacenterScene = forwardRef<
       return rotations;
     }, [cabinets, layout]);
 
+    const deviceById = useMemo(
+      () => new Map(devices.map((d) => [d.id, d] as const)),
+      [devices],
+    );
+
+    const highlightedDeviceCabinetId = useMemo(() => {
+      if (!highlightedDeviceId) return null;
+      return deviceById.get(highlightedDeviceId)?.cabinetId || null;
+    }, [deviceById, highlightedDeviceId]);
+
+    const [cabinetLODById, setCabinetLODById] = useState<
+      Record<string, LODLevel>
+    >({});
+    const cabinetLODRef = useRef<Record<string, LODLevel>>({});
+    const lodFrameRef = useRef(0);
+    const tempVecRef = useRef(new THREE.Vector3());
+    const lastCamPosRef = useRef(new THREE.Vector3());
+    const lastCamQuatRef = useRef(new THREE.Quaternion());
+
+    useEffect(() => {
+      const init: Record<string, LODLevel> = {};
+      for (const c of cabinets) init[c.id] = LODLevel.HIGH;
+      cabinetLODRef.current = init;
+      setCabinetLODById(init);
+    }, [cabinets]);
+
+    useFrame(() => {
+      lodFrameRef.current++;
+      if (lodFrameRef.current % 10 !== 0) return;
+
+      const thresholds =
+        effectiveConfig.lodThresholds || DEFAULT_LOD_THRESHOLDS;
+      const camPos = camera.position;
+      const camQuat = camera.quaternion;
+      const camDelta2 = lastCamPosRef.current.distanceToSquared(camPos);
+      const quatDelta = 1 - Math.abs(lastCamQuatRef.current.dot(camQuat));
+      if (camDelta2 < 1e-4 && quatDelta < 1e-6) return;
+      lastCamPosRef.current.copy(camPos);
+      lastCamQuatRef.current.copy(camQuat);
+
+      const h = 0.12;
+      const highEnter2 = (thresholds.high * (1 - h)) ** 2;
+      const highExit2 = (thresholds.high * (1 + h)) ** 2;
+      const medEnter2 = (thresholds.medium * (1 - h)) ** 2;
+      const medExit2 = (thresholds.medium * (1 + h)) ** 2;
+      const lowEnter2 = (thresholds.low * (1 - h)) ** 2;
+      const lowExit2 = (thresholds.low * (1 + h)) ** 2;
+
+      const prev = cabinetLODRef.current;
+      const next: Record<string, LODLevel> = {};
+      let changed = false;
+
+      for (const cab of cabinets) {
+        const p = cabinetPositions[cab.id];
+        if (!p) {
+          next[cab.id] = LODLevel.HIDDEN;
+          if (prev[cab.id] !== LODLevel.HIDDEN) changed = true;
+          continue;
+        }
+        const v = tempVecRef.current.set(p[0], p[1], p[2]);
+        const dist2 = camPos.distanceToSquared(v);
+        const prevLevel = prev[cab.id] ?? LODLevel.HIGH;
+        let level = prevLevel;
+        if (prevLevel === LODLevel.HIGH) {
+          if (dist2 > highExit2) level = LODLevel.MEDIUM;
+        } else if (prevLevel === LODLevel.MEDIUM) {
+          if (dist2 < highEnter2) level = LODLevel.HIGH;
+          else if (dist2 > medExit2) level = LODLevel.LOW;
+        } else if (prevLevel === LODLevel.LOW) {
+          if (dist2 < medEnter2) level = LODLevel.MEDIUM;
+          else if (dist2 > lowExit2) level = LODLevel.HIDDEN;
+        } else if (prevLevel === LODLevel.HIDDEN) {
+          if (dist2 < lowEnter2) level = LODLevel.LOW;
+        } else {
+          level = calculateLODLevel(Math.sqrt(dist2), thresholds);
+        }
+        next[cab.id] = level;
+        if (prev[cab.id] !== level) changed = true;
+      }
+
+      if (!changed) return;
+      cabinetLODRef.current = next;
+      setCabinetLODById(next);
+    });
+
     // 获取机柜内的设备
-    const getDevicesByCabinet = (cabinetId: string) => {
-      return devices.filter((d) => d.cabinetId === cabinetId);
-    };
+    const cabinetById = useMemo(
+      () => new Map(cabinets.map((c) => [c.id, c] as const)),
+      [cabinets],
+    );
+
+    const devicesByCabinet = useMemo(() => {
+      const map = new Map<string, IDC.Device[]>();
+      for (const d of devices) {
+        if (!d.cabinetId) continue;
+        const arr = map.get(d.cabinetId);
+        if (arr) arr.push(d);
+        else map.set(d.cabinetId, [d]);
+      }
+      return map;
+    }, [devices]);
+
+    const getDevicesByCabinet = useCallback(
+      (cabinetId: string) => devicesByCabinet.get(cabinetId) || [],
+      [devicesByCabinet],
+    );
+
+    const devicePositions = useMemo(() => {
+      const acc: Record<string, [number, number, number]> = {};
+      for (const dev of devices) {
+        const cab = dev.cabinetId ? cabinetById.get(dev.cabinetId) : undefined;
+        if (!cab) continue;
+        const cp = cabinetPositions[cab.id];
+        if (!cp) continue;
+        const [cx, cy, cz] = cp;
+        acc[dev.id] = [cx, cy + (dev as any).position * 0.0445, cz + 0.3];
+      }
+      return acc;
+    }, [cabinetById, cabinetPositions, devices]);
+
+    const effectiveHighlightedCabinetId =
+      highlightedCabinetId || highlightedDeviceCabinetId;
+
+    const farCabinetInstances = useMemo(() => {
+      const list: {
+        id: string;
+        position: [number, number, number];
+        rotationY: number;
+        width: number;
+        height: number;
+        depth: number;
+        status: string;
+      }[] = [];
+      for (const cab of cabinets) {
+        const level = cabinetLODById[cab.id] || LODLevel.HIGH;
+        if (level !== LODLevel.LOW) continue;
+        const p = cabinetPositions[cab.id];
+        if (!p) continue;
+        list.push({
+          id: cab.id,
+          position: p,
+          rotationY: cabinetRotations[cab.id] || 0,
+          width: 0.6,
+          height: cab.uHeight * 0.0445,
+          depth: 1.0,
+          status: cab.status,
+        });
+      }
+      return list;
+    }, [cabinets, cabinetLODById, cabinetPositions, cabinetRotations]);
 
     // 双击聚焦
     const handleCabinetDoubleClick = useCallback(
@@ -613,6 +759,22 @@ export const DatacenterScene = forwardRef<
         setCameraTarget(position);
       },
       [],
+    );
+
+    const handleInstancedCabinetClick = useCallback(
+      (cabinetId: string) => {
+        const cab = cabinetById.get(cabinetId);
+        if (cab) onSelectCabinet(cab);
+      },
+      [cabinetById, onSelectCabinet],
+    );
+
+    const handleInstancedCabinetDoubleClick = useCallback(
+      (cabinetId: string, _position: [number, number, number]) => {
+        const p = cabinetPositions[cabinetId];
+        if (p) setCameraTarget(p);
+      },
+      [cabinetPositions],
     );
 
     const handleDeviceDoubleClick = useCallback(
@@ -633,250 +795,265 @@ export const DatacenterScene = forwardRef<
     }));
 
     return (
-      <>
-        {/* 背景和氛围 - 恢复明亮风格 */}
-        {/* 不需要color background，让Canvas透明透出父容器颜色或默认白色/浅灰 */}
-        {/* <color attach="background" args={['#d0d8e0']} /> */}
+      <AnimationRegistryProvider>
+        <>
+          {/* 背景和氛围 - 恢复明亮风格 */}
+          {/* 不需要color background，让Canvas透明透出父容器颜色或默认白色/浅灰 */}
+          {/* <color attach="background" args={['#d0d8e0']} /> */}
 
-        {/* 相机 */}
-        <PerspectiveCamera makeDefault position={[8, 6, 8]} fov={50} />
+          {/* 相机 */}
+          <PerspectiveCamera makeDefault position={[8, 6, 8]} fov={50} />
 
-        {/* 相机动画控制器 */}
-        <CameraController
-          targetPosition={cameraTarget}
-          onAnimationComplete={() => setCameraTarget(null)}
-        />
-
-        {/* 灯光 - 明亮风格 */}
-        <ambientLight intensity={0.7} />
-        <directionalLight
-          position={[10, 20, 10]}
-          intensity={1.0}
-          castShadow
-          shadow-mapSize={[2048, 2048]}
-        >
-          <orthographicCamera
-            attach="shadow-camera"
-            args={[-30, 30, 30, -30]}
+          {/* 相机动画控制器 */}
+          <CameraController
+            targetPosition={cameraTarget}
+            onAnimationComplete={() => setCameraTarget(null)}
           />
-        </directionalLight>
-        <hemisphereLight
-          intensity={0.4}
-          groundColor="#ffffff"
-          color="#ffffff"
-        />
 
-        {/* 地板网格 */}
-        <Grid
-          renderOrder={-1}
-          position={[0, -0.01, 0]}
-          infiniteGrid
-          cellSize={1}
-          sectionSize={5}
-          fadeDistance={50}
-          fadeStrength={1}
-          cellColor="#d9d9d9"
-          sectionColor="#bfbfbf"
-        />
-
-        {/* 地面 - 浅灰色 */}
-        <mesh
-          rotation={[-Math.PI / 2, 0, 0]}
-          position={[0, -0.02, 0]}
-          receiveShadow
-        >
-          <planeGeometry args={[100, 100]} />
-          <meshStandardMaterial
-            color="#f0f2f5"
-            metalness={0.1}
-            roughness={0.8}
+          {/* 灯光 - 明亮风格 */}
+          <ambientLight intensity={0.7} />
+          <directionalLight
+            position={[10, 20, 10]}
+            intensity={1.0}
+            castShadow
+            shadow-mapSize={[2048, 2048]}
+          >
+            <orthographicCamera
+              attach="shadow-camera"
+              args={[-30, 30, 30, -30]}
+            />
+          </directionalLight>
+          <hemisphereLight
+            intensity={0.4}
+            groundColor="#ffffff"
+            color="#ffffff"
           />
-        </mesh>
 
-        {(layout?.zones || []).map((z) => {
-          const color =
-            z.color ||
-            (z.type === 'hot_aisle'
-              ? 'rgba(245,34,45,0.22)'
-              : z.type === 'cold_aisle'
-                ? 'rgba(22,119,255,0.18)'
-                : z.type === 'restricted'
-                  ? 'rgba(250,173,20,0.18)'
-                  : 'rgba(82,196,26,0.14)');
-          const rot = ((z.rotation || 0) * Math.PI) / 180;
-          return (
-            <mesh
-              key={z.id}
-              rotation={[-Math.PI / 2, rot, 0]}
-              position={[z.x + z.width / 2, -0.019, z.y + z.height / 2]}
-              receiveShadow
-            >
-              <planeGeometry args={[z.width, z.height]} />
-              <meshStandardMaterial
-                color={color as any}
-                transparent
-                opacity={0.35}
-                metalness={0}
-                roughness={1}
-              />
-            </mesh>
-          );
-        })}
+          {/* 地板网格 */}
+          <Grid
+            renderOrder={-1}
+            position={[0, -0.01, 0]}
+            infiniteGrid
+            cellSize={1}
+            sectionSize={5}
+            fadeDistance={50}
+            fadeStrength={1}
+            cellColor="#d9d9d9"
+            sectionColor="#bfbfbf"
+          />
 
-        {/* 渲染机柜 - 使用性能优化配置 */}
-        {cabinets.map((cabinet) => (
-          <Cabinet3D
-            key={cabinet.id}
-            cabinet={cabinet}
-            devices={getDevicesByCabinet(cabinet.id)}
-            templates={templates}
-            position={cabinetPositions[cabinet.id] || [0, 0, 0]}
-            rotationY={cabinetRotations[cabinet.id] || 0}
-            selected={selectedCabinet?.id === cabinet.id}
-            highlighted={
-              highlightedCabinetId === cabinet.id ||
-              getDevicesByCabinet(cabinet.id).some(
-                (d) => d.id === highlightedDeviceId,
-              )
+          {/* 地面 - 浅灰色 */}
+          <mesh
+            rotation={[-Math.PI / 2, 0, 0]}
+            position={[0, -0.02, 0]}
+            receiveShadow
+          >
+            <planeGeometry args={[100, 100]} />
+            <meshStandardMaterial
+              color="#f0f2f5"
+              metalness={0.1}
+              roughness={0.8}
+            />
+          </mesh>
+
+          {(layout?.zones || []).map((z) => {
+            const color =
+              z.color ||
+              (z.type === 'hot_aisle'
+                ? 'rgba(245,34,45,0.22)'
+                : z.type === 'cold_aisle'
+                  ? 'rgba(22,119,255,0.18)'
+                  : z.type === 'restricted'
+                    ? 'rgba(250,173,20,0.18)'
+                    : 'rgba(82,196,26,0.14)');
+            const rot = ((z.rotation || 0) * Math.PI) / 180;
+            return (
+              <mesh
+                key={z.id}
+                rotation={[-Math.PI / 2, rot, 0]}
+                position={[z.x + z.width / 2, -0.019, z.y + z.height / 2]}
+                receiveShadow
+              >
+                <planeGeometry args={[z.width, z.height]} />
+                <meshStandardMaterial
+                  color={color as any}
+                  transparent
+                  opacity={0.35}
+                  metalness={0}
+                  roughness={1}
+                />
+              </mesh>
+            );
+          })}
+
+          {/* 渲染机柜 - 使用性能优化配置 */}
+          <InstancedCabinets
+            instances={farCabinetInstances}
+            selectedId={selectedCabinet?.id || null}
+            highlightedId={effectiveHighlightedCabinetId}
+            onClickCabinet={handleInstancedCabinetClick}
+            onDoubleClickCabinet={handleInstancedCabinetDoubleClick}
+          />
+
+          {cabinets.map((cabinet) => {
+            const lodLevel = cabinetLODById[cabinet.id] || LODLevel.HIGH;
+            if (lodLevel === LODLevel.LOW || lodLevel === LODLevel.HIDDEN) {
+              return null;
             }
-            onSelect={onSelectCabinet}
-            onDoubleClick={handleCabinetDoubleClick}
-            onDeviceSelect={onSelectDevice}
-            onDeviceDoubleClick={handleDeviceDoubleClick}
-            lodEnabled={effectiveConfig.enableLOD}
-            lodThresholds={effectiveConfig.lodThresholds}
-            infoDensity={infoDensity}
-          />
-        ))}
 
-        {/* 交互工具 */}
-        <KeyboardController
-          onResetView={() => setCameraTarget([4, 1, 4])}
-          onEscape={() => {
-            onSelectCabinet(null);
-            onSelectDevice(null);
-            onSelectionChange?.([]);
-            setPendingMeasurementPoint(null);
-          }}
-        />
+            const cabDevices = getDevicesByCabinet(cabinet.id);
+            const highlighted = effectiveHighlightedCabinetId === cabinet.id;
+            const showLabel = selectedCabinet?.id === cabinet.id || highlighted;
 
-        {measurements && onMeasurementsChange && (
-          <MeasurementManager
-            measurements={measurements}
-            onRemove={(id) => {
-              onMeasurementsChange(measurements.filter((m) => m.id !== id));
+            return (
+              <Cabinet3D
+                key={cabinet.id}
+                cabinet={cabinet}
+                devices={cabDevices}
+                templates={templates}
+                position={cabinetPositions[cabinet.id] || [0, 0, 0]}
+                rotationY={cabinetRotations[cabinet.id] || 0}
+                selected={selectedCabinet?.id === cabinet.id}
+                highlighted={highlighted}
+                onSelect={onSelectCabinet}
+                onDoubleClick={handleCabinetDoubleClick}
+                onDeviceSelect={onSelectDevice}
+                onDeviceDoubleClick={handleDeviceDoubleClick}
+                lodLevel={lodLevel}
+                infoDensity={infoDensity}
+                showLabel={showLabel}
+              />
+            );
+          })}
+
+          {/* 交互工具 */}
+          <KeyboardController
+            onResetView={() => setCameraTarget([4, 1, 4])}
+            onEscape={() => {
+              onSelectCabinet(null);
+              onSelectDevice(null);
+              onSelectionChange?.([]);
+              setPendingMeasurementPoint(null);
             }}
           />
-        )}
 
-        {/* 测量交互控制器 */}
-        <MeasurementController
-          enabled={activeTool === 'measure'}
-          onAddPoint={handleAddMeasurementPoint}
-        />
-
-        {/* 未完成的测量点提示 */}
-        {pendingMeasurementPoint && (
-          <MeasurementPointIndicator point={pendingMeasurementPoint} />
-        )}
-
-        {/* 框选检测器 */}
-        <BoxSelectDetector
-          enabled={activeTool === 'boxSelect'}
-          selectionBox={selectionBox || null}
-          devicePositions={devices.reduce(
-            (acc, dev) => {
-              // 计算设备的世界坐标（简化版，实际应从 matrixWorld 获取或计算）
-              // 这里仅作示意，实际需要精确坐标
-              const cab = cabinets.find((c) => c.id === dev.cabinetId);
-              if (cab && cabinetPositions[cab.id]) {
-                const [cx, cy, cz] = cabinetPositions[cab.id];
-                // 假设设备在机柜内的相对位置
-                acc[dev.id] = [
-                  cx,
-                  cy + (dev as any).position * 0.0445,
-                  cz + 0.3,
-                ];
-              }
-              return acc;
-            },
-            {} as Record<string, [number, number, number]>,
+          {measurements && onMeasurementsChange && (
+            <MeasurementManager
+              measurements={measurements}
+              onRemove={(id) => {
+                onMeasurementsChange(measurements.filter((m) => m.id !== id));
+              }}
+            />
           )}
-          onSelectionComplete={(ids) => onSelectionChange?.(ids)}
-        />
 
-        {/* 热力图叠加层 */}
-        <HeatmapOverlay
-          cabinetPositions={cabinetPositions}
-          cabinetTemperatures={cabinetTemperatures}
-          cabinetHeights={cabinets.reduce(
-            (acc, cab) => {
-              acc[cab.id] = cab.uHeight * 0.0445;
-              return acc;
-            },
-            {} as Record<string, number>,
+          {/* 测量交互控制器 */}
+          <MeasurementController
+            enabled={activeTool === 'measure'}
+            onAddPoint={handleAddMeasurementPoint}
+          />
+
+          {/* 未完成的测量点提示 */}
+          {pendingMeasurementPoint && (
+            <MeasurementPointIndicator point={pendingMeasurementPoint} />
           )}
-          visible={showHeatmap}
-        />
 
-        {/* 渲染连线 */}
-        {connections.map((conn) => {
-          const sourceDevice = devices.find(
-            (d) => d.id === conn.sourceDeviceId,
-          );
-          const targetDevice = devices.find(
-            (d) => d.id === conn.targetDeviceId,
-          );
+          {/* 框选检测器 */}
+          <BoxSelectDetector
+            enabled={activeTool === 'boxSelect'}
+            selectionBox={selectionBox || null}
+            devicePositions={devicePositions}
+            onSelectionComplete={(ids) => onSelectionChange?.(ids)}
+          />
 
-          if (!sourceDevice || !targetDevice) return null;
+          {/* 热力图叠加层 */}
+          <HeatmapOverlay
+            cabinetPositions={cabinetPositions}
+            cabinetTemperatures={cabinetTemperatures}
+            cabinetHeights={cabinets.reduce(
+              (acc, cab) => {
+                acc[cab.id] = cab.uHeight * 0.0445;
+                return acc;
+              },
+              {} as Record<string, number>,
+            )}
+            visible={showHeatmap}
+          />
 
-          const sourceCabPos = cabinetPositions[sourceDevice.cabinetId];
-          const targetCabPos = cabinetPositions[targetDevice.cabinetId];
+          {/* 渲染连线 */}
+          {connections.map((conn) => {
+            const sourceDevice = devices.find(
+              (d) => d.id === conn.sourceDeviceId,
+            );
+            const targetDevice = devices.find(
+              (d) => d.id === conn.targetDeviceId,
+            );
 
-          if (!sourceCabPos || !targetCabPos) return null;
+            if (!sourceDevice || !targetDevice) return null;
 
-          const sourceY = sourceDevice.startU * 0.0445;
-          const targetY = targetDevice.startU * 0.0445;
+            const sourceCabPos = cabinetPositions[sourceDevice.cabinetId];
+            const targetCabPos = cabinetPositions[targetDevice.cabinetId];
 
-          const points = [
-            new THREE.Vector3(sourceCabPos[0], sourceY, sourceCabPos[2] + 0.6),
-            new THREE.Vector3(sourceCabPos[0], sourceY, sourceCabPos[2] + 0.8),
-            new THREE.Vector3(targetCabPos[0], targetY, targetCabPos[2] + 0.8),
-            new THREE.Vector3(targetCabPos[0], targetY, targetCabPos[2] + 0.6),
-          ];
+            if (!sourceCabPos || !targetCabPos) return null;
 
-          const curve = new THREE.CatmullRomCurve3(points);
+            const sourceY = sourceDevice.startU * 0.0445;
+            const targetY = targetDevice.startU * 0.0445;
 
-          // 高亮相关连线
-          const isHighlighted =
-            selectedDevice?.id === conn.sourceDeviceId ||
-            selectedDevice?.id === conn.targetDeviceId ||
-            highlightedDeviceId === conn.sourceDeviceId ||
-            highlightedDeviceId === conn.targetDeviceId;
+            const points = [
+              new THREE.Vector3(
+                sourceCabPos[0],
+                sourceY,
+                sourceCabPos[2] + 0.6,
+              ),
+              new THREE.Vector3(
+                sourceCabPos[0],
+                sourceY,
+                sourceCabPos[2] + 0.8,
+              ),
+              new THREE.Vector3(
+                targetCabPos[0],
+                targetY,
+                targetCabPos[2] + 0.8,
+              ),
+              new THREE.Vector3(
+                targetCabPos[0],
+                targetY,
+                targetCabPos[2] + 0.6,
+              ),
+            ];
 
-          return (
-            <mesh key={conn.id}>
-              <tubeGeometry
-                args={[curve, 20, isHighlighted ? 0.015 : 0.01, 8, false]}
-              />
-              <meshStandardMaterial
-                color={conn.cableColor || '#3498db'}
-                emissive={conn.cableColor || '#3498db'}
-                emissiveIntensity={isHighlighted ? 0.5 : 0.2}
-              />
-            </mesh>
-          );
-        })}
+            const curve = new THREE.CatmullRomCurve3(points);
 
-        {/* 轨道控制器 */}
-        <OrbitControls
-          enableDamping
-          dampingFactor={0.05}
-          minDistance={2}
-          maxDistance={30}
-          maxPolarAngle={Math.PI / 2 - 0.1}
-        />
-      </>
+            // 高亮相关连线
+            const isHighlighted =
+              selectedDevice?.id === conn.sourceDeviceId ||
+              selectedDevice?.id === conn.targetDeviceId ||
+              highlightedDeviceId === conn.sourceDeviceId ||
+              highlightedDeviceId === conn.targetDeviceId;
+
+            return (
+              <mesh key={conn.id}>
+                <tubeGeometry
+                  args={[curve, 20, isHighlighted ? 0.015 : 0.01, 8, false]}
+                />
+                <meshStandardMaterial
+                  color={conn.cableColor || '#3498db'}
+                  emissive={conn.cableColor || '#3498db'}
+                  emissiveIntensity={isHighlighted ? 0.5 : 0.2}
+                />
+              </mesh>
+            );
+          })}
+
+          {/* 轨道控制器 */}
+          <OrbitControls
+            enableDamping
+            dampingFactor={0.05}
+            minDistance={2}
+            maxDistance={30}
+            maxPolarAngle={Math.PI / 2 - 0.1}
+          />
+        </>
+      </AnimationRegistryProvider>
     );
   },
 );

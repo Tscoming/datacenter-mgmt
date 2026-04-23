@@ -8,7 +8,7 @@
  */
 
 import { Html } from '@react-three/drei';
-import { type ThreeEvent, useThree } from '@react-three/fiber';
+import type { ThreeEvent } from '@react-three/fiber';
 import React, { useCallback, useEffect, useMemo, useRef } from 'react';
 import * as THREE from 'three';
 
@@ -57,9 +57,8 @@ export const InstancedDeviceGroup: React.FC<InstancedDeviceGroupProps> = ({
 }) => {
   const meshRef = useRef<THREE.InstancedMesh>(null);
   const statusMeshRef = useRef<THREE.InstancedMesh>(null);
-  const { raycaster, camera, pointer } = useThree();
-
   const [hoveredIndex, setHoveredIndex] = React.useState<number | null>(null);
+  const prevHoveredIndexRef = useRef<number | null>(null);
 
   const count = devices.length;
 
@@ -84,6 +83,14 @@ export const InstancedDeviceGroup: React.FC<InstancedDeviceGroupProps> = ({
     });
   }, [color]);
 
+  useEffect(() => {
+    return () => {
+      geometry.dispose();
+      statusGeometry.dispose();
+      material.dispose();
+    };
+  }, [geometry, material, statusGeometry]);
+
   // 状态颜色映射
   const statusColors: Record<string, THREE.Color> = useMemo(
     () => ({
@@ -95,15 +102,6 @@ export const InstancedDeviceGroup: React.FC<InstancedDeviceGroupProps> = ({
     }),
     [],
   );
-
-  // 设备索引映射（用于快速查找）
-  const _deviceIndexMap = useMemo(() => {
-    const map = new Map<string, number>();
-    devices.forEach((device, index) => {
-      map.set(device.id, index);
-    });
-    return map;
-  }, [devices]);
 
   // 更新实例变换矩阵
   useEffect(() => {
@@ -146,14 +144,26 @@ export const InstancedDeviceGroup: React.FC<InstancedDeviceGroupProps> = ({
     }
   }, [devices, statusColors]);
 
-  // 更新高亮状态
+  const baseColor = useMemo(() => new THREE.Color(color), [color]);
+  const highlightColor = useMemo(() => new THREE.Color('#4096ff'), []);
+  const hoverColor = useMemo(
+    () => new THREE.Color(color).multiplyScalar(1.3),
+    [color],
+  );
+
+  const applyColorAt = useCallback((i: number, c: THREE.Color) => {
+    if (!meshRef.current) return;
+    meshRef.current.setColorAt(i, c);
+    if (meshRef.current.instanceColor) {
+      meshRef.current.instanceColor.needsUpdate = true;
+    }
+  }, []);
+
+  // 更新选中/高亮/数据变化时的颜色（全量）
   useEffect(() => {
     if (!meshRef.current) return;
-
+    prevHoveredIndexRef.current = hoveredIndex;
     const tempColor = new THREE.Color();
-    const baseColor = new THREE.Color(color);
-    const highlightColor = new THREE.Color('#4096ff');
-    const hoverColor = new THREE.Color(color).multiplyScalar(1.3);
 
     devices.forEach((device, i) => {
       if (device.id === selectedId || device.id === highlightedId) {
@@ -169,26 +179,55 @@ export const InstancedDeviceGroup: React.FC<InstancedDeviceGroupProps> = ({
     if (meshRef.current.instanceColor) {
       meshRef.current.instanceColor.needsUpdate = true;
     }
-  }, [devices, selectedId, highlightedId, hoveredIndex, color]);
+  }, [
+    devices,
+    selectedId,
+    highlightedId,
+    hoveredIndex,
+    baseColor,
+    highlightColor,
+    hoverColor,
+  ]);
 
-  // 射线检测 - 查找悬停的实例
-  const handlePointerMove = useCallback(
-    (e: ThreeEvent<PointerEvent>) => {
-      e.stopPropagation();
-
-      if (!meshRef.current) return;
-
-      // 获取交叉点的实例索引
-      const intersects = raycaster.intersectObject(meshRef.current);
-
-      if (intersects.length > 0 && intersects[0].instanceId !== undefined) {
-        setHoveredIndex(intersects[0].instanceId);
-      } else {
-        setHoveredIndex(null);
+  // 更新 hover 变化时的颜色（增量）
+  useEffect(() => {
+    const prev = prevHoveredIndexRef.current;
+    if (prev !== null && prev !== hoveredIndex) {
+      const prevDevice = devices[prev];
+      if (prevDevice) {
+        const c =
+          prevDevice.id === selectedId || prevDevice.id === highlightedId
+            ? highlightColor
+            : baseColor;
+        applyColorAt(prev, c);
       }
-    },
-    [raycaster],
-  );
+    }
+    if (hoveredIndex !== null) {
+      const curDevice = devices[hoveredIndex];
+      if (curDevice) {
+        const c =
+          curDevice.id === selectedId || curDevice.id === highlightedId
+            ? highlightColor
+            : hoverColor;
+        applyColorAt(hoveredIndex, c);
+      }
+    }
+    prevHoveredIndexRef.current = hoveredIndex;
+  }, [
+    applyColorAt,
+    baseColor,
+    devices,
+    highlightColor,
+    highlightedId,
+    hoverColor,
+    hoveredIndex,
+    selectedId,
+  ]);
+
+  const handlePointerMove = useCallback((e: ThreeEvent<PointerEvent>) => {
+    e.stopPropagation();
+    setHoveredIndex(e.instanceId ?? null);
+  }, []);
 
   const handlePointerOut = useCallback(() => {
     setHoveredIndex(null);
@@ -198,40 +237,22 @@ export const InstancedDeviceGroup: React.FC<InstancedDeviceGroupProps> = ({
   const handleClick = useCallback(
     (e: ThreeEvent<MouseEvent>) => {
       e.stopPropagation();
-
-      if (!meshRef.current) return;
-
-      const intersects = raycaster.intersectObject(meshRef.current);
-
-      if (intersects.length > 0 && intersects[0].instanceId !== undefined) {
-        const index = intersects[0].instanceId;
-        const device = devices[index];
-        if (device && onSelect) {
-          onSelect(device.id, device.position);
-        }
-      }
+      if (e.instanceId === undefined) return;
+      const device = devices[e.instanceId];
+      if (device && onSelect) onSelect(device.id, device.position);
     },
-    [raycaster, devices, onSelect],
+    [devices, onSelect],
   );
 
   // 双击处理
   const handleDoubleClick = useCallback(
     (e: ThreeEvent<MouseEvent>) => {
       e.stopPropagation();
-
-      if (!meshRef.current) return;
-
-      const intersects = raycaster.intersectObject(meshRef.current);
-
-      if (intersects.length > 0 && intersects[0].instanceId !== undefined) {
-        const index = intersects[0].instanceId;
-        const device = devices[index];
-        if (device && onDoubleClick) {
-          onDoubleClick(device.id, device.position);
-        }
-      }
+      if (e.instanceId === undefined) return;
+      const device = devices[e.instanceId];
+      if (device && onDoubleClick) onDoubleClick(device.id, device.position);
     },
-    [raycaster, devices, onDoubleClick],
+    [devices, onDoubleClick],
   );
 
   // 悬停提示
@@ -343,12 +364,17 @@ export const InstancedDeviceRenderer: React.FC<
   selectedDeviceId,
   highlightedDeviceId,
 }) => {
+  const templateMap = useMemo(
+    () => new Map(templates.map((t) => [t.id, t] as const)),
+    [templates],
+  );
+
   // 按类别分组设备
   const devicesByCategory = useMemo(() => {
     const groups: DevicesByCategory = {};
 
     devices.forEach((device) => {
-      const template = templates.find((t) => t.id === device.templateId);
+      const template = templateMap.get(device.templateId);
       const category = template?.category || 'other';
 
       if (!groups[category]) {
@@ -373,7 +399,7 @@ export const InstancedDeviceRenderer: React.FC<
     });
 
     return groups;
-  }, [devices, templates, devicePositions, deviceDimensions]);
+  }, [devices, templateMap, devicePositions, deviceDimensions]);
 
   // 设备ID -> Device对象映射
   const deviceMap = useMemo(() => {

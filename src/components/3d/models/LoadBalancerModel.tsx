@@ -1,6 +1,9 @@
-import { useFrame } from '@react-three/fiber';
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef } from 'react';
 import * as THREE from 'three';
+import {
+  type SinePulseParams,
+  useAnimationRegistry,
+} from '../AnimationRegistry';
 import { FrontPortPanel, RearPortPanel } from '../PortRenderer3D';
 import { DeviceTooltip } from './shared/DeviceTooltip';
 import {
@@ -26,17 +29,68 @@ export const LoadBalancerModel: React.FC<DeviceModelProps> = ({
   onPointerOut,
 }) => {
   const groupRef = useRef<THREE.Group>(null);
-  const [breathPhase, setBreathPhase] = useState(0);
+  const statusMaterialRef = useRef<THREE.MeshStandardMaterial | null>(null);
+  const arrowMaterialLeftRef = useRef<THREE.MeshStandardMaterial | null>(null);
+  const arrowMaterialRightRef = useRef<THREE.MeshStandardMaterial | null>(null);
+  const arrowLeftIdRef = useRef<string | null>(null);
+  const arrowRightIdRef = useRef<string | null>(null);
+  const statusIdRef = useRef<string | null>(null);
+  const arrowParamsRef = useRef<SinePulseParams>({
+    enabled: true,
+    base: 0.3,
+    amp: 0.2,
+    speed: 2,
+  });
+  const statusParamsRef = useRef<SinePulseParams>({
+    enabled: true,
+    base: 0.5,
+    amp: 0.5,
+    speed: 2,
+  });
+  const registry = useAnimationRegistry();
   const status =
     deviceStatusColors[device.status] || deviceStatusColors.offline;
   const isWarning = device.status === 'warning' || device.status === 'error';
 
-  useFrame((_, delta) => {
-    setBreathPhase((prev) => (prev + delta * 2) % (Math.PI * 2));
-  });
+  useEffect(() => {
+    const left = arrowMaterialLeftRef.current;
+    const right = arrowMaterialRightRef.current;
+    if (left && !arrowLeftIdRef.current) {
+      arrowLeftIdRef.current = registry.register(left, arrowParamsRef);
+    }
+    if (right && !arrowRightIdRef.current) {
+      arrowRightIdRef.current = registry.register(right, arrowParamsRef);
+    }
+    return () => {
+      if (arrowLeftIdRef.current) registry.unregister(arrowLeftIdRef.current);
+      if (arrowRightIdRef.current) registry.unregister(arrowRightIdRef.current);
+      arrowLeftIdRef.current = null;
+      arrowRightIdRef.current = null;
+    };
+  }, [registry]);
 
-  const emissiveIntensity = isWarning ? 0.5 + Math.sin(breathPhase) * 0.5 : 0.3;
-  const arrowGlow = 0.3 + Math.sin(breathPhase) * 0.2;
+  useEffect(() => {
+    const mat = statusMaterialRef.current;
+    if (!mat) return;
+    if (isWarning) {
+      if (!statusIdRef.current) {
+        statusIdRef.current = registry.register(mat, statusParamsRef);
+      }
+      return;
+    }
+    if (statusIdRef.current) {
+      registry.unregister(statusIdRef.current);
+      statusIdRef.current = null;
+    }
+    mat.emissiveIntensity = 0.3;
+  }, [isWarning, registry]);
+
+  useEffect(() => {
+    return () => {
+      if (statusIdRef.current) registry.unregister(statusIdRef.current);
+      statusIdRef.current = null;
+    };
+  }, [registry]);
 
   return (
     <group ref={groupRef} position={position}>
@@ -59,17 +113,19 @@ export const LoadBalancerModel: React.FC<DeviceModelProps> = ({
       <mesh position={[-width * 0.15, 0, depth / 2 + 0.003]}>
         <boxGeometry args={[0.02, height * 0.4, 0.003]} />
         <meshStandardMaterial
+          ref={arrowMaterialLeftRef}
           color="#00ffff"
           emissive="#00ffff"
-          emissiveIntensity={arrowGlow}
+          emissiveIntensity={0.3}
         />
       </mesh>
       <mesh position={[width * 0.15, 0, depth / 2 + 0.003]}>
         <boxGeometry args={[0.02, height * 0.4, 0.003]} />
         <meshStandardMaterial
+          ref={arrowMaterialRightRef}
           color="#00ffff"
           emissive="#00ffff"
-          emissiveIntensity={arrowGlow}
+          emissiveIntensity={0.3}
         />
       </mesh>
 
@@ -77,9 +133,10 @@ export const LoadBalancerModel: React.FC<DeviceModelProps> = ({
       <mesh position={[width / 2 - 0.02, height / 3, depth / 2 + 0.005]}>
         <sphereGeometry args={[0.008, 8, 8]} />
         <meshStandardMaterial
+          ref={statusMaterialRef}
           color={status.color}
           emissive={status.emissive}
-          emissiveIntensity={emissiveIntensity}
+          emissiveIntensity={0.3}
         />
       </mesh>
 

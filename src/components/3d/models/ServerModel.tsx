@@ -1,6 +1,9 @@
-import { useFrame } from '@react-three/fiber';
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef } from 'react';
 import * as THREE from 'three';
+import {
+  type SinePulseParams,
+  useAnimationRegistry,
+} from '../AnimationRegistry';
 import { FrontPortPanel, RearPortPanel } from '../PortRenderer3D';
 import { DeviceTooltip } from './shared/DeviceTooltip';
 import {
@@ -26,19 +29,41 @@ export const ServerModel: React.FC<DeviceModelProps> = ({
   onPointerOut,
 }) => {
   const groupRef = useRef<THREE.Group>(null);
-  const [breathPhase, setBreathPhase] = useState(0);
+  const statusMaterialRef = useRef<THREE.MeshStandardMaterial | null>(null);
+  const animIdRef = useRef<string | null>(null);
+  const pulseParamsRef = useRef<SinePulseParams>({
+    enabled: true,
+    base: 0.5,
+    amp: 0.5,
+    speed: 3,
+  });
+  const registry = useAnimationRegistry();
   const status =
     deviceStatusColors[device.status] || deviceStatusColors.offline;
   const isWarning = device.status === 'warning' || device.status === 'error';
 
-  // 呼吸灯动画
-  useFrame((_, delta) => {
+  useEffect(() => {
+    const mat = statusMaterialRef.current;
+    if (!mat) return;
     if (isWarning) {
-      setBreathPhase((prev) => (prev + delta * 3) % (Math.PI * 2));
+      if (!animIdRef.current) {
+        animIdRef.current = registry.register(mat, pulseParamsRef);
+      }
+      return;
     }
-  });
+    if (animIdRef.current) {
+      registry.unregister(animIdRef.current);
+      animIdRef.current = null;
+    }
+    mat.emissiveIntensity = 0.3;
+  }, [isWarning, registry]);
 
-  const emissiveIntensity = isWarning ? 0.5 + Math.sin(breathPhase) * 0.5 : 0.3;
+  useEffect(() => {
+    return () => {
+      if (animIdRef.current) registry.unregister(animIdRef.current);
+      animIdRef.current = null;
+    };
+  }, [registry]);
 
   // 硬盘LED阵列
   const diskLeds = useMemo(() => {
@@ -117,9 +142,10 @@ export const ServerModel: React.FC<DeviceModelProps> = ({
       <mesh position={[width / 2 - 0.02, height / 3, depth / 2 + 0.005]}>
         <sphereGeometry args={[0.008, 8, 8]} />
         <meshStandardMaterial
+          ref={statusMaterialRef}
           color={status.color}
           emissive={status.emissive}
-          emissiveIntensity={emissiveIntensity}
+          emissiveIntensity={0.3}
         />
       </mesh>
 

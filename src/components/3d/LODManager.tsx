@@ -279,7 +279,11 @@ export const LODDeviceWrapper: React.FC<LODDeviceWrapperProps> = ({
   onPointerOut,
 }) => {
   const { camera } = useThree();
-  const [lodLevel, setLodLevel] = React.useState<LODLevel>(LODLevel.HIGH);
+  const rootRef = useRef<THREE.Group>(null);
+  const lodLevelRef = useRef<LODLevel>(LODLevel.HIGH);
+  const highRef = useRef<THREE.Group>(null);
+  const mediumRef = useRef<THREE.Group>(null);
+  const lowRef = useRef<THREE.Group>(null);
   const frameCount = useRef(0);
   const positionVec = useMemo(() => new THREE.Vector3(...position), [position]);
 
@@ -292,34 +296,21 @@ export const LODDeviceWrapper: React.FC<LODDeviceWrapperProps> = ({
     const distance = camera.position.distanceTo(positionVec);
     const newLevel = calculateLODLevel(distance, thresholds);
 
-    if (newLevel !== lodLevel) {
-      setLodLevel(newLevel);
+    if (newLevel !== lodLevelRef.current) {
+      lodLevelRef.current = newLevel;
+      if (rootRef.current)
+        rootRef.current.visible = newLevel !== LODLevel.HIDDEN;
+      if (highRef.current) highRef.current.visible = newLevel === LODLevel.HIGH;
+      if (mediumRef.current)
+        mediumRef.current.visible = newLevel === LODLevel.MEDIUM;
+      if (lowRef.current) lowRef.current.visible = newLevel === LODLevel.LOW;
     }
   });
 
-  // 根据 LOD 级别渲染不同精度的模型
-  switch (lodLevel) {
-    case LODLevel.HIDDEN:
-      return null;
-
-    case LODLevel.LOW:
-      return (
-        <LowDetailDevice
-          position={position}
-          width={width}
-          height={height}
-          depth={depth}
-          color={bodyColor}
-          status={status}
-          onClick={onClick}
-          onDoubleClick={onDoubleClick}
-          onPointerOver={onPointerOver}
-          onPointerOut={onPointerOut}
-        />
-      );
-
-    case LODLevel.MEDIUM:
-      return (
+  return (
+    <group ref={rootRef}>
+      <group ref={highRef}>{children}</group>
+      <group ref={mediumRef} visible={false}>
         <MediumDetailDevice
           position={position}
           width={width}
@@ -333,10 +324,23 @@ export const LODDeviceWrapper: React.FC<LODDeviceWrapperProps> = ({
           onPointerOver={onPointerOver}
           onPointerOut={onPointerOut}
         />
-      );
-    default:
-      return <>{children}</>;
-  }
+      </group>
+      <group ref={lowRef} visible={false}>
+        <LowDetailDevice
+          position={position}
+          width={width}
+          height={height}
+          depth={depth}
+          color={bodyColor}
+          status={status}
+          onClick={onClick}
+          onDoubleClick={onDoubleClick}
+          onPointerOver={onPointerOver}
+          onPointerOut={onPointerOut}
+        />
+      </group>
+    </group>
+  );
 };
 
 // ==================== 工具函数 ====================
