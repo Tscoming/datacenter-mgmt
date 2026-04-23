@@ -1,6 +1,9 @@
-import { useFrame } from '@react-three/fiber';
 import React, { useEffect, useMemo, useRef } from 'react';
 import * as THREE from 'three';
+import {
+  type SinePulseParams,
+  useAnimationRegistry,
+} from '../AnimationRegistry';
 import { FrontPortPanel, RearPortPanel } from '../PortRenderer3D';
 import { DeviceTooltip } from './shared/DeviceTooltip';
 import {
@@ -33,8 +36,15 @@ export const PDUModel: React.FC<DeviceModelProps> = ({
   onPointerOut,
 }) => {
   const groupRef = useRef<THREE.Group>(null);
-  const phaseRef = useRef(0);
   const statusMaterialRef = useRef<THREE.MeshStandardMaterial | null>(null);
+  const animIdRef = useRef<string | null>(null);
+  const pulseParamsRef = useRef<SinePulseParams>({
+    enabled: true,
+    base: 0.5,
+    amp: 0.5,
+    speed: 3,
+  });
+  const registry = useAnimationRegistry();
   const status =
     deviceStatusColors[device.status] || deviceStatusColors.offline;
   const isWarning = device.status === 'warning' || device.status === 'error';
@@ -46,19 +56,28 @@ export const PDUModel: React.FC<DeviceModelProps> = ({
   const maxLoad = pduData.maxLoad || 3000;
   const loadPercent = maxLoad > 0 ? (currentLoad / maxLoad) * 100 : 0;
 
-  useFrame((_, delta) => {
-    const mat = statusMaterialRef.current;
-    if (!mat) return;
-    if (!isWarning) return;
-    phaseRef.current = (phaseRef.current + delta * 3) % (Math.PI * 2);
-    mat.emissiveIntensity = 0.5 + Math.sin(phaseRef.current) * 0.5;
-  });
-
   useEffect(() => {
     const mat = statusMaterialRef.current;
     if (!mat) return;
-    if (!isWarning) mat.emissiveIntensity = 0.3;
-  }, [isWarning]);
+    if (isWarning) {
+      if (!animIdRef.current) {
+        animIdRef.current = registry.register(mat, pulseParamsRef);
+      }
+      return;
+    }
+    if (animIdRef.current) {
+      registry.unregister(animIdRef.current);
+      animIdRef.current = null;
+    }
+    mat.emissiveIntensity = 0.3;
+  }, [isWarning, registry]);
+
+  useEffect(() => {
+    return () => {
+      if (animIdRef.current) registry.unregister(animIdRef.current);
+      animIdRef.current = null;
+    };
+  }, [registry]);
 
   // 负载指示灯颜色(根据负载百分比)
   const loadColor = useMemo(() => {
