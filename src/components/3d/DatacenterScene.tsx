@@ -135,10 +135,19 @@ export const Cabinet3D: React.FC<CabinetProps> = ({
   const groupRef = useRef<THREE.Group>(null);
   const [hovered, setHovered] = useState(false);
   const [hoveredDevice, setHoveredDevice] = useState<IDC.Device | null>(null);
-  const [flashIntensity, setFlashIntensity] = useState(0.8);
-  const [lodLevel, setLodLevel] = useState<LODLevel>(LODLevel.HIGH);
+  const statusLightMaterialRef = useRef<THREE.MeshStandardMaterial | null>(
+    null,
+  );
+  const lodLevelRef = useRef<LODLevel>(LODLevel.HIGH);
+  const highDetailRef = useRef<THREE.Group>(null);
+  const mediumDetailRef = useRef<THREE.Group>(null);
+  const lowDetailRef = useRef<THREE.Group>(null);
   const frameCount = useRef(0);
   const positionVec = useMemo(() => new THREE.Vector3(...position), [position]);
+  const templateMap = useMemo(
+    () => new Map(templates.map((t) => [t.id, t] as const)),
+    [templates],
+  );
 
   // 机柜尺寸（按U位缩放）
   const cabinetHeight = cabinet.uHeight * 0.0445; // 1U = 44.5mm
@@ -161,6 +170,24 @@ export const Cabinet3D: React.FC<CabinetProps> = ({
   // 告警闪烁效果
   const isWarning = cabinet.status === 'warning' || cabinet.status === 'error';
 
+  const applyLODVisibility = useCallback((level: LODLevel) => {
+    if (highDetailRef.current)
+      highDetailRef.current.visible = level === LODLevel.HIGH;
+    if (mediumDetailRef.current)
+      mediumDetailRef.current.visible = level === LODLevel.MEDIUM;
+    if (lowDetailRef.current)
+      lowDetailRef.current.visible = level === LODLevel.LOW;
+    if (level === LODLevel.HIDDEN) {
+      if (highDetailRef.current) highDetailRef.current.visible = false;
+      if (mediumDetailRef.current) mediumDetailRef.current.visible = false;
+      if (lowDetailRef.current) lowDetailRef.current.visible = false;
+    }
+  }, []);
+
+  useEffect(() => {
+    applyLODVisibility(lodLevelRef.current);
+  }, [applyLODVisibility]);
+
   // 使用useFrame实现LOD计算和闪烁动画
   useFrame(({ clock }) => {
     // LOD 计算（每10帧更新一次，减少开销）
@@ -169,18 +196,23 @@ export const Cabinet3D: React.FC<CabinetProps> = ({
       if (frameCount.current % 10 === 0) {
         const distance = camera.position.distanceTo(positionVec);
         const newLevel = calculateLODLevel(distance, lodThresholds);
-        if (newLevel !== lodLevel) {
-          setLodLevel(newLevel);
+        if (newLevel !== lodLevelRef.current) {
+          lodLevelRef.current = newLevel;
+          applyLODVisibility(newLevel);
         }
       }
     }
 
     // 闪烁动画
-    if (isWarning) {
-      const speed = cabinet.status === 'error' ? 4 : 2;
-      const newIntensity = 0.8 + Math.sin(clock.getElapsedTime() * speed) * 0.7;
-      setFlashIntensity(Math.max(0.3, Math.min(1.5, newIntensity)));
+    const mat = statusLightMaterialRef.current;
+    if (!mat) return;
+    if (!isWarning) {
+      mat.emissiveIntensity = 0.8;
+      return;
     }
+    const speed = cabinet.status === 'error' ? 4 : 2;
+    const newIntensity = 0.8 + Math.sin(clock.getElapsedTime() * speed) * 0.7;
+    mat.emissiveIntensity = Math.max(0.3, Math.min(1.5, newIntensity));
   });
 
   // 机柜主体颜色
@@ -268,36 +300,30 @@ export const Cabinet3D: React.FC<CabinetProps> = ({
       >
         <sphereGeometry args={[0.02, 16, 16]} />
         <meshStandardMaterial
+          ref={statusLightMaterialRef}
           color={statusColors[cabinet.status]}
           emissive={statusColors[cabinet.status]}
-          emissiveIntensity={isWarning ? flashIntensity : 0.8}
+          emissiveIntensity={0.8}
         />
       </mesh>
 
       {/* 使用LOD优化的3D设备模型渲染 */}
-      {devices.map((device) => {
-        const deviceY =
-          (device.startU - 1) * 0.0445 -
-          cabinetHeight / 2 +
-          ((device.endU - device.startU + 1) * 0.0445) / 2;
-        const deviceHeight = (device.endU - device.startU + 1) * 0.0445;
-        const template = templates.find((t) => t.id === device.templateId);
-        const category = template?.category || 'other';
-        const deviceWidth = cabinetWidth - 0.06;
-        const deviceDepth = 0.08;
-        const devicePosition: [number, number, number] = [
-          0,
-          deviceY,
-          cabinetDepth / 2 - 0.05,
-        ];
-
-        // 根据LOD级别选择不同精度的模型
-        if (lodEnabled && lodLevel === LODLevel.HIDDEN) {
-          return null; // 超远距离，不渲染
-        }
-
-        if (lodEnabled && lodLevel === LODLevel.LOW) {
-          // 低精度模型
+      <group ref={lowDetailRef} visible={false}>
+        {devices.map((device) => {
+          const deviceY =
+            (device.startU - 1) * 0.0445 -
+            cabinetHeight / 2 +
+            ((device.endU - device.startU + 1) * 0.0445) / 2;
+          const deviceHeight = (device.endU - device.startU + 1) * 0.0445;
+          const template = templateMap.get(device.templateId);
+          const category = template?.category || 'other';
+          const deviceWidth = cabinetWidth - 0.06;
+          const deviceDepth = 0.08;
+          const devicePosition: [number, number, number] = [
+            0,
+            deviceY,
+            cabinetDepth / 2 - 0.05,
+          ];
           return (
             <LowDetailDevice
               key={device.id}
@@ -320,10 +346,24 @@ export const Cabinet3D: React.FC<CabinetProps> = ({
               }}
             />
           );
-        }
-
-        if (lodEnabled && lodLevel === LODLevel.MEDIUM) {
-          // 中等精度模型
+        })}
+      </group>
+      <group ref={mediumDetailRef} visible={false}>
+        {devices.map((device) => {
+          const deviceY =
+            (device.startU - 1) * 0.0445 -
+            cabinetHeight / 2 +
+            ((device.endU - device.startU + 1) * 0.0445) / 2;
+          const deviceHeight = (device.endU - device.startU + 1) * 0.0445;
+          const template = templateMap.get(device.templateId);
+          const category = template?.category || 'other';
+          const deviceWidth = cabinetWidth - 0.06;
+          const deviceDepth = 0.08;
+          const devicePosition: [number, number, number] = [
+            0,
+            deviceY,
+            cabinetDepth / 2 - 0.05,
+          ];
           return (
             <MediumDetailDevice
               key={device.id}
@@ -347,35 +387,51 @@ export const Cabinet3D: React.FC<CabinetProps> = ({
               }}
             />
           );
-        }
-
-        // 高精度模型（原始完整模型）
-        return (
-          <Device3D
-            key={device.id}
-            device={device}
-            template={template}
-            category={category}
-            position={devicePosition}
-            height={deviceHeight - 0.005}
-            width={deviceWidth}
-            depth={deviceDepth}
-            selected={hoveredDevice?.id === device.id}
-            onSelect={(d) => {
-              setHoveredDevice(d);
-              onDeviceSelect(d);
-            }}
-            onDoubleClick={(d, _pos) => {
-              const devicePos: [number, number, number] = [
-                position[0],
-                position[1] + deviceY,
-                position[2],
-              ];
-              onDeviceDoubleClick(d, devicePos);
-            }}
-          />
-        );
-      })}
+        })}
+      </group>
+      <group ref={highDetailRef}>
+        {devices.map((device) => {
+          const deviceY =
+            (device.startU - 1) * 0.0445 -
+            cabinetHeight / 2 +
+            ((device.endU - device.startU + 1) * 0.0445) / 2;
+          const deviceHeight = (device.endU - device.startU + 1) * 0.0445;
+          const template = templates.find((t) => t.id === device.templateId);
+          const category = template?.category || 'other';
+          const deviceWidth = cabinetWidth - 0.06;
+          const deviceDepth = 0.08;
+          const devicePosition: [number, number, number] = [
+            0,
+            deviceY,
+            cabinetDepth / 2 - 0.05,
+          ];
+          return (
+            <Device3D
+              key={device.id}
+              device={device}
+              template={template}
+              category={category}
+              position={devicePosition}
+              height={deviceHeight - 0.005}
+              width={deviceWidth}
+              depth={deviceDepth}
+              selected={hoveredDevice?.id === device.id}
+              onSelect={(d) => {
+                setHoveredDevice(d);
+                onDeviceSelect(d);
+              }}
+              onDoubleClick={(d, _pos) => {
+                const devicePos: [number, number, number] = [
+                  position[0],
+                  position[1] + deviceY,
+                  position[2],
+                ];
+                onDeviceDoubleClick(d, devicePos);
+              }}
+            />
+          );
+        })}
+      </group>
 
       {/* 机柜标签 - 根据信息密度显示不同内容 */}
       <Html
@@ -603,9 +659,39 @@ export const DatacenterScene = forwardRef<
     }, [cabinets, layout]);
 
     // 获取机柜内的设备
-    const getDevicesByCabinet = (cabinetId: string) => {
-      return devices.filter((d) => d.cabinetId === cabinetId);
-    };
+    const cabinetById = useMemo(
+      () => new Map(cabinets.map((c) => [c.id, c] as const)),
+      [cabinets],
+    );
+
+    const devicesByCabinet = useMemo(() => {
+      const map = new Map<string, IDC.Device[]>();
+      for (const d of devices) {
+        if (!d.cabinetId) continue;
+        const arr = map.get(d.cabinetId);
+        if (arr) arr.push(d);
+        else map.set(d.cabinetId, [d]);
+      }
+      return map;
+    }, [devices]);
+
+    const getDevicesByCabinet = useCallback(
+      (cabinetId: string) => devicesByCabinet.get(cabinetId) || [],
+      [devicesByCabinet],
+    );
+
+    const devicePositions = useMemo(() => {
+      const acc: Record<string, [number, number, number]> = {};
+      for (const dev of devices) {
+        const cab = dev.cabinetId ? cabinetById.get(dev.cabinetId) : undefined;
+        if (!cab) continue;
+        const cp = cabinetPositions[cab.id];
+        if (!cp) continue;
+        const [cx, cy, cz] = cp;
+        acc[dev.id] = [cx, cy + (dev as any).position * 0.0445, cz + 0.3];
+      }
+      return acc;
+    }, [cabinetById, cabinetPositions, devices]);
 
     // 双击聚焦
     const handleCabinetDoubleClick = useCallback(
@@ -724,30 +810,31 @@ export const DatacenterScene = forwardRef<
         })}
 
         {/* 渲染机柜 - 使用性能优化配置 */}
-        {cabinets.map((cabinet) => (
-          <Cabinet3D
-            key={cabinet.id}
-            cabinet={cabinet}
-            devices={getDevicesByCabinet(cabinet.id)}
-            templates={templates}
-            position={cabinetPositions[cabinet.id] || [0, 0, 0]}
-            rotationY={cabinetRotations[cabinet.id] || 0}
-            selected={selectedCabinet?.id === cabinet.id}
-            highlighted={
-              highlightedCabinetId === cabinet.id ||
-              getDevicesByCabinet(cabinet.id).some(
-                (d) => d.id === highlightedDeviceId,
-              )
-            }
-            onSelect={onSelectCabinet}
-            onDoubleClick={handleCabinetDoubleClick}
-            onDeviceSelect={onSelectDevice}
-            onDeviceDoubleClick={handleDeviceDoubleClick}
-            lodEnabled={effectiveConfig.enableLOD}
-            lodThresholds={effectiveConfig.lodThresholds}
-            infoDensity={infoDensity}
-          />
-        ))}
+        {cabinets.map((cabinet) => {
+          const cabDevices = getDevicesByCabinet(cabinet.id);
+          const highlighted =
+            highlightedCabinetId === cabinet.id ||
+            cabDevices.some((d) => d.id === highlightedDeviceId);
+          return (
+            <Cabinet3D
+              key={cabinet.id}
+              cabinet={cabinet}
+              devices={cabDevices}
+              templates={templates}
+              position={cabinetPositions[cabinet.id] || [0, 0, 0]}
+              rotationY={cabinetRotations[cabinet.id] || 0}
+              selected={selectedCabinet?.id === cabinet.id}
+              highlighted={highlighted}
+              onSelect={onSelectCabinet}
+              onDoubleClick={handleCabinetDoubleClick}
+              onDeviceSelect={onSelectDevice}
+              onDeviceDoubleClick={handleDeviceDoubleClick}
+              lodEnabled={effectiveConfig.enableLOD}
+              lodThresholds={effectiveConfig.lodThresholds}
+              infoDensity={infoDensity}
+            />
+          );
+        })}
 
         {/* 交互工具 */}
         <KeyboardController
@@ -784,24 +871,7 @@ export const DatacenterScene = forwardRef<
         <BoxSelectDetector
           enabled={activeTool === 'boxSelect'}
           selectionBox={selectionBox || null}
-          devicePositions={devices.reduce(
-            (acc, dev) => {
-              // 计算设备的世界坐标（简化版，实际应从 matrixWorld 获取或计算）
-              // 这里仅作示意，实际需要精确坐标
-              const cab = cabinets.find((c) => c.id === dev.cabinetId);
-              if (cab && cabinetPositions[cab.id]) {
-                const [cx, cy, cz] = cabinetPositions[cab.id];
-                // 假设设备在机柜内的相对位置
-                acc[dev.id] = [
-                  cx,
-                  cy + (dev as any).position * 0.0445,
-                  cz + 0.3,
-                ];
-              }
-              return acc;
-            },
-            {} as Record<string, [number, number, number]>,
-          )}
+          devicePositions={devicePositions}
           onSelectionComplete={(ids) => onSelectionChange?.(ids)}
         />
 

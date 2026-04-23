@@ -1,5 +1,5 @@
 import { useFrame } from '@react-three/fiber';
-import React, { useRef, useState } from 'react';
+import React, { useRef } from 'react';
 import * as THREE from 'three';
 import { FrontPortPanel, RearPortPanel } from '../PortRenderer3D';
 import { DeviceTooltip } from './shared/DeviceTooltip';
@@ -26,17 +26,28 @@ export const LoadBalancerModel: React.FC<DeviceModelProps> = ({
   onPointerOut,
 }) => {
   const groupRef = useRef<THREE.Group>(null);
-  const [breathPhase, setBreathPhase] = useState(0);
+  const phaseRef = useRef(0);
+  const statusMaterialRef = useRef<THREE.MeshStandardMaterial | null>(null);
+  const arrowMaterialLeftRef = useRef<THREE.MeshStandardMaterial | null>(null);
+  const arrowMaterialRightRef = useRef<THREE.MeshStandardMaterial | null>(null);
   const status =
     deviceStatusColors[device.status] || deviceStatusColors.offline;
   const isWarning = device.status === 'warning' || device.status === 'error';
 
   useFrame((_, delta) => {
-    setBreathPhase((prev) => (prev + delta * 2) % (Math.PI * 2));
+    phaseRef.current = (phaseRef.current + delta * 2) % (Math.PI * 2);
+    const arrowGlow = 0.3 + Math.sin(phaseRef.current) * 0.2;
+    const arrowLeft = arrowMaterialLeftRef.current;
+    const arrowRight = arrowMaterialRightRef.current;
+    if (arrowLeft) arrowLeft.emissiveIntensity = arrowGlow;
+    if (arrowRight) arrowRight.emissiveIntensity = arrowGlow;
+    const statusMat = statusMaterialRef.current;
+    if (statusMat) {
+      statusMat.emissiveIntensity = isWarning
+        ? 0.5 + Math.sin(phaseRef.current) * 0.5
+        : 0.3;
+    }
   });
-
-  const emissiveIntensity = isWarning ? 0.5 + Math.sin(breathPhase) * 0.5 : 0.3;
-  const arrowGlow = 0.3 + Math.sin(breathPhase) * 0.2;
 
   return (
     <group ref={groupRef} position={position}>
@@ -59,17 +70,19 @@ export const LoadBalancerModel: React.FC<DeviceModelProps> = ({
       <mesh position={[-width * 0.15, 0, depth / 2 + 0.003]}>
         <boxGeometry args={[0.02, height * 0.4, 0.003]} />
         <meshStandardMaterial
+          ref={arrowMaterialLeftRef}
           color="#00ffff"
           emissive="#00ffff"
-          emissiveIntensity={arrowGlow}
+          emissiveIntensity={0.3}
         />
       </mesh>
       <mesh position={[width * 0.15, 0, depth / 2 + 0.003]}>
         <boxGeometry args={[0.02, height * 0.4, 0.003]} />
         <meshStandardMaterial
+          ref={arrowMaterialRightRef}
           color="#00ffff"
           emissive="#00ffff"
-          emissiveIntensity={arrowGlow}
+          emissiveIntensity={0.3}
         />
       </mesh>
 
@@ -77,9 +90,10 @@ export const LoadBalancerModel: React.FC<DeviceModelProps> = ({
       <mesh position={[width / 2 - 0.02, height / 3, depth / 2 + 0.005]}>
         <sphereGeometry args={[0.008, 8, 8]} />
         <meshStandardMaterial
+          ref={statusMaterialRef}
           color={status.color}
           emissive={status.emissive}
-          emissiveIntensity={emissiveIntensity}
+          emissiveIntensity={0.3}
         />
       </mesh>
 

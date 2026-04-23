@@ -1,5 +1,5 @@
 import { useFrame } from '@react-three/fiber';
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef } from 'react';
 import * as THREE from 'three';
 import { FrontPortPanel, RearPortPanel } from '../PortRenderer3D';
 import { DeviceTooltip } from './shared/DeviceTooltip';
@@ -26,19 +26,26 @@ export const ServerModel: React.FC<DeviceModelProps> = ({
   onPointerOut,
 }) => {
   const groupRef = useRef<THREE.Group>(null);
-  const [breathPhase, setBreathPhase] = useState(0);
+  const phaseRef = useRef(0);
+  const statusMaterialRef = useRef<THREE.MeshStandardMaterial | null>(null);
   const status =
     deviceStatusColors[device.status] || deviceStatusColors.offline;
   const isWarning = device.status === 'warning' || device.status === 'error';
 
   // 呼吸灯动画
   useFrame((_, delta) => {
-    if (isWarning) {
-      setBreathPhase((prev) => (prev + delta * 3) % (Math.PI * 2));
-    }
+    const mat = statusMaterialRef.current;
+    if (!mat) return;
+    if (!isWarning) return;
+    phaseRef.current = (phaseRef.current + delta * 3) % (Math.PI * 2);
+    mat.emissiveIntensity = 0.5 + Math.sin(phaseRef.current) * 0.5;
   });
 
-  const emissiveIntensity = isWarning ? 0.5 + Math.sin(breathPhase) * 0.5 : 0.3;
+  useEffect(() => {
+    const mat = statusMaterialRef.current;
+    if (!mat) return;
+    if (!isWarning) mat.emissiveIntensity = 0.3;
+  }, [isWarning]);
 
   // 硬盘LED阵列
   const diskLeds = useMemo(() => {
@@ -117,9 +124,10 @@ export const ServerModel: React.FC<DeviceModelProps> = ({
       <mesh position={[width / 2 - 0.02, height / 3, depth / 2 + 0.005]}>
         <sphereGeometry args={[0.008, 8, 8]} />
         <meshStandardMaterial
+          ref={statusMaterialRef}
           color={status.color}
           emissive={status.emissive}
-          emissiveIntensity={emissiveIntensity}
+          emissiveIntensity={0.3}
         />
       </mesh>
 

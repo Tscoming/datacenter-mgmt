@@ -278,6 +278,16 @@ const Datacenter3DPage: React.FC = () => {
   // 加载选中数据中心的数据 (不包括设备，设备由 BatchLoader 处理)
   useEffect(() => {
     if (selectedDc) {
+      setSelectedCabinet(null);
+      setSelectedDevice(null);
+      setCabinetDrawerOpen(false);
+      setDeviceDrawerOpen(false);
+      setHighlightedDeviceId(null);
+      setHighlightedCabinetId(null);
+      setSelectionBox(null);
+      setSelectedDeviceIds([]);
+      setMeasurements([]);
+      setActiveTool(null);
       setLoading(true);
       Promise.all([
         getCabinetsByDatacenter(selectedDc),
@@ -633,6 +643,7 @@ const Datacenter3DPage: React.FC = () => {
               >
                 <Suspense fallback={null}>
                   <DatacenterScene
+                    key={selectedDc || 'dc'}
                     ref={sceneRef}
                     cabinets={cabinets}
                     devices={devices}
