@@ -33,6 +33,8 @@ export function InstancedCabinets({
   const warningStatusMeshRef = useRef<THREE.InstancedMesh>(null);
   const errorStatusMeshRef = useRef<THREE.InstancedMesh>(null);
   const hoveredIndexRef = useRef<number | null>(null);
+  const prevSelectedIdRef = useRef<string | null>(null);
+  const prevHighlightedIdRef = useRef<string | null>(null);
 
   const geometry = useMemo(() => new THREE.BoxGeometry(1, 1, 1), []);
   const statusGeometry = useMemo(
@@ -90,10 +92,15 @@ export function InstancedCabinets({
   );
 
   const baseColor = useMemo(() => new THREE.Color('#5b6c7d'), []);
-  const highlightColor = useMemo(() => new THREE.Color('#4096ff'), []);
   const hoverColor = useMemo(() => new THREE.Color('#69b1ff'), []);
   const selectedOutlineColor = useMemo(() => new THREE.Color('#4096ff'), []);
   const highlightedOutlineColor = useMemo(() => new THREE.Color('#95de64'), []);
+
+  const idToIndex = useMemo(() => {
+    const map = new Map<string, number>();
+    for (let i = 0; i < instances.length; i++) map.set(instances[i].id, i);
+    return map;
+  }, [instances]);
 
   useEffect(() => {
     return () => {
@@ -162,22 +169,9 @@ export function InstancedCabinets({
       } else {
         normalStatusMeshRef.current?.setMatrixAt(normalIdx++, tempMatrix);
       }
-
-      const isSelected = inst.id === selectedId;
-      const isHighlighted = inst.id === highlightedId;
-      if (isSelected) tempColor.copy(selectedOutlineColor);
-      else if (isHighlighted) tempColor.copy(highlightedOutlineColor);
-      else
-        tempColor.copy(
-          statusColors[inst.status as keyof typeof statusColors] || baseColor,
-        );
-      meshRef.current.setColorAt(i, tempColor);
     }
 
     meshRef.current.instanceMatrix.needsUpdate = true;
-    if (meshRef.current.instanceColor) {
-      meshRef.current.instanceColor.needsUpdate = true;
-    }
     if (normalStatusMeshRef.current) {
       normalStatusMeshRef.current.instanceMatrix.needsUpdate = true;
     }
@@ -188,13 +182,10 @@ export function InstancedCabinets({
       errorStatusMeshRef.current.instanceMatrix.needsUpdate = true;
     }
   }, [
-    baseColor,
-    highlightedId,
-    highlightedOutlineColor,
     instances,
-    selectedId,
-    selectedOutlineColor,
-    statusColors,
+    statusCounts.error,
+    statusCounts.normal,
+    statusCounts.warning,
   ]);
 
   const frameRef = useRef(0);
@@ -216,6 +207,106 @@ export function InstancedCabinets({
     if (meshRef.current.instanceColor)
       meshRef.current.instanceColor.needsUpdate = true;
   }, []);
+
+  const applyBaseColorAt = useCallback(
+    (i: number) => {
+      const inst = instances[i];
+      if (!inst) return;
+      const c =
+        statusColors[inst.status as keyof typeof statusColors] || baseColor;
+      setColorAt(i, c);
+    },
+    [baseColor, instances, setColorAt, statusColors],
+  );
+
+  useEffect(() => {
+    if (!meshRef.current) return;
+    const tempColor = new THREE.Color();
+    for (let i = 0; i < instances.length; i++) {
+      const inst = instances[i];
+      tempColor.copy(
+        statusColors[inst.status as keyof typeof statusColors] || baseColor,
+      );
+      meshRef.current.setColorAt(i, tempColor);
+    }
+    if (meshRef.current.instanceColor) {
+      meshRef.current.instanceColor.needsUpdate = true;
+    }
+
+    prevSelectedIdRef.current = null;
+    prevHighlightedIdRef.current = null;
+
+    if (selectedId) {
+      const idx = idToIndex.get(selectedId);
+      if (idx !== undefined) setColorAt(idx, selectedOutlineColor);
+      prevSelectedIdRef.current = selectedId;
+    }
+    if (highlightedId) {
+      const idx = idToIndex.get(highlightedId);
+      if (idx !== undefined) setColorAt(idx, highlightedOutlineColor);
+      prevHighlightedIdRef.current = highlightedId;
+    }
+  }, [
+    baseColor,
+    highlightedId,
+    highlightedOutlineColor,
+    idToIndex,
+    instances,
+    selectedId,
+    selectedOutlineColor,
+    setColorAt,
+    statusColors,
+  ]);
+
+  useEffect(() => {
+    const prevSelected = prevSelectedIdRef.current;
+    if (prevSelected && prevSelected !== selectedId) {
+      const idx = idToIndex.get(prevSelected);
+      if (idx !== undefined) {
+        if (prevSelected === highlightedId)
+          setColorAt(idx, highlightedOutlineColor);
+        else applyBaseColorAt(idx);
+      }
+    }
+    if (selectedId && selectedId !== prevSelected) {
+      const idx = idToIndex.get(selectedId);
+      if (idx !== undefined) setColorAt(idx, selectedOutlineColor);
+    }
+    prevSelectedIdRef.current = selectedId || null;
+  }, [
+    applyBaseColorAt,
+    highlightedId,
+    highlightedOutlineColor,
+    idToIndex,
+    selectedId,
+    selectedOutlineColor,
+    setColorAt,
+  ]);
+
+  useEffect(() => {
+    const prevHighlighted = prevHighlightedIdRef.current;
+    if (prevHighlighted && prevHighlighted !== highlightedId) {
+      const idx = idToIndex.get(prevHighlighted);
+      if (idx !== undefined) {
+        if (prevHighlighted === selectedId)
+          setColorAt(idx, selectedOutlineColor);
+        else applyBaseColorAt(idx);
+      }
+    }
+    if (highlightedId && highlightedId !== prevHighlighted) {
+      const idx = idToIndex.get(highlightedId);
+      if (idx !== undefined) setColorAt(idx, highlightedOutlineColor);
+    }
+    prevHighlightedIdRef.current = highlightedId || null;
+  }, [
+    applyBaseColorAt,
+    highlightedId,
+    highlightedOutlineColor,
+    idToIndex,
+    selectedId,
+    selectedOutlineColor,
+    setColorAt,
+  ]);
 
   const handlePointerMove = useCallback(
     (e: ThreeEvent<PointerEvent>) => {
