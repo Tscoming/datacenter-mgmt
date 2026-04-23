@@ -375,7 +375,7 @@ export const Cabinet3D: React.FC<CabinetProps> = ({
       </group>
 
       {/* 机柜标签 - 根据信息密度显示不同内容 */}
-      {showLabel && (
+      {(showLabel || hovered) && (
         <Html
           position={[0, cabinetHeight / 2 + 0.1, cabinetDepth / 2]}
           center
@@ -392,6 +392,7 @@ export const Cabinet3D: React.FC<CabinetProps> = ({
               whiteSpace: 'nowrap',
               color: '#333',
               boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+              pointerEvents: 'none',
               display: 'flex',
               flexDirection: 'column',
               alignItems: 'center',
@@ -617,6 +618,8 @@ export const DatacenterScene = forwardRef<
     const cabinetLODRef = useRef<Record<string, LODLevel>>({});
     const lodFrameRef = useRef(0);
     const tempVecRef = useRef(new THREE.Vector3());
+    const lastCamPosRef = useRef(new THREE.Vector3());
+    const lastCamQuatRef = useRef(new THREE.Quaternion());
 
     useEffect(() => {
       const init: Record<string, LODLevel> = {};
@@ -631,6 +634,22 @@ export const DatacenterScene = forwardRef<
 
       const thresholds =
         effectiveConfig.lodThresholds || DEFAULT_LOD_THRESHOLDS;
+      const camPos = camera.position;
+      const camQuat = camera.quaternion;
+      const camDelta2 = lastCamPosRef.current.distanceToSquared(camPos);
+      const quatDelta = 1 - Math.abs(lastCamQuatRef.current.dot(camQuat));
+      if (camDelta2 < 1e-4 && quatDelta < 1e-6) return;
+      lastCamPosRef.current.copy(camPos);
+      lastCamQuatRef.current.copy(camQuat);
+
+      const h = 0.12;
+      const highEnter2 = (thresholds.high * (1 - h)) ** 2;
+      const highExit2 = (thresholds.high * (1 + h)) ** 2;
+      const medEnter2 = (thresholds.medium * (1 - h)) ** 2;
+      const medExit2 = (thresholds.medium * (1 + h)) ** 2;
+      const lowEnter2 = (thresholds.low * (1 - h)) ** 2;
+      const lowExit2 = (thresholds.low * (1 + h)) ** 2;
+
       const prev = cabinetLODRef.current;
       const next: Record<string, LODLevel> = {};
       let changed = false;
@@ -643,8 +662,22 @@ export const DatacenterScene = forwardRef<
           continue;
         }
         const v = tempVecRef.current.set(p[0], p[1], p[2]);
-        const distance = camera.position.distanceTo(v);
-        const level = calculateLODLevel(distance, thresholds);
+        const dist2 = camPos.distanceToSquared(v);
+        const prevLevel = prev[cab.id] ?? LODLevel.HIGH;
+        let level = prevLevel;
+        if (prevLevel === LODLevel.HIGH) {
+          if (dist2 > highExit2) level = LODLevel.MEDIUM;
+        } else if (prevLevel === LODLevel.MEDIUM) {
+          if (dist2 < highEnter2) level = LODLevel.HIGH;
+          else if (dist2 > medExit2) level = LODLevel.LOW;
+        } else if (prevLevel === LODLevel.LOW) {
+          if (dist2 < medEnter2) level = LODLevel.MEDIUM;
+          else if (dist2 > lowExit2) level = LODLevel.HIDDEN;
+        } else if (prevLevel === LODLevel.HIDDEN) {
+          if (dist2 < lowEnter2) level = LODLevel.LOW;
+        } else {
+          level = calculateLODLevel(Math.sqrt(dist2), thresholds);
+        }
         next[cab.id] = level;
         if (prev[cab.id] !== level) changed = true;
       }
@@ -870,11 +903,7 @@ export const DatacenterScene = forwardRef<
 
             const cabDevices = getDevicesByCabinet(cabinet.id);
             const highlighted = effectiveHighlightedCabinetId === cabinet.id;
-            const showLabel =
-              lodLevel === LODLevel.HIGH ||
-              (infoDensity === 'detailed' && lodLevel === LODLevel.MEDIUM) ||
-              selectedCabinet?.id === cabinet.id ||
-              highlighted;
+            const showLabel = selectedCabinet?.id === cabinet.id || highlighted;
 
             return (
               <Cabinet3D

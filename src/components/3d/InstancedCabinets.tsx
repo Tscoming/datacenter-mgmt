@@ -1,4 +1,4 @@
-import type { ThreeEvent } from '@react-three/fiber';
+import { type ThreeEvent, useFrame } from '@react-three/fiber';
 import React, { useCallback, useEffect, useMemo, useRef } from 'react';
 import * as THREE from 'three';
 
@@ -29,7 +29,9 @@ export function InstancedCabinets({
   ) => void;
 }) {
   const meshRef = useRef<THREE.InstancedMesh>(null);
-  const statusMeshRef = useRef<THREE.InstancedMesh>(null);
+  const normalStatusMeshRef = useRef<THREE.InstancedMesh>(null);
+  const warningStatusMeshRef = useRef<THREE.InstancedMesh>(null);
+  const errorStatusMeshRef = useRef<THREE.InstancedMesh>(null);
   const hoveredIndexRef = useRef<number | null>(null);
 
   const geometry = useMemo(() => new THREE.BoxGeometry(1, 1, 1), []);
@@ -48,11 +50,30 @@ export function InstancedCabinets({
       }),
     [],
   );
-  const statusMaterial = useMemo(
+
+  const normalStatusMaterial = useMemo(
     () =>
       new THREE.MeshStandardMaterial({
-        vertexColors: true,
-        emissive: new THREE.Color('#ffffff'),
+        color: new THREE.Color('#52c41a'),
+        emissive: new THREE.Color('#52c41a'),
+        emissiveIntensity: 0.8,
+      }),
+    [],
+  );
+  const warningStatusMaterial = useMemo(
+    () =>
+      new THREE.MeshStandardMaterial({
+        color: new THREE.Color('#faad14'),
+        emissive: new THREE.Color('#faad14'),
+        emissiveIntensity: 0.8,
+      }),
+    [],
+  );
+  const errorStatusMaterial = useMemo(
+    () =>
+      new THREE.MeshStandardMaterial({
+        color: new THREE.Color('#f5222d'),
+        emissive: new THREE.Color('#f5222d'),
         emissiveIntensity: 0.8,
       }),
     [],
@@ -79,27 +100,50 @@ export function InstancedCabinets({
       geometry.dispose();
       statusGeometry.dispose();
       material.dispose();
-      statusMaterial.dispose();
+      normalStatusMaterial.dispose();
+      warningStatusMaterial.dispose();
+      errorStatusMaterial.dispose();
     };
-  }, [geometry, material, statusGeometry, statusMaterial]);
+  }, [
+    errorStatusMaterial,
+    geometry,
+    material,
+    normalStatusMaterial,
+    statusGeometry,
+    warningStatusMaterial,
+  ]);
+
+  const statusCounts = useMemo(() => {
+    let normal = 0;
+    let warning = 0;
+    let error = 0;
+    for (const inst of instances) {
+      if (inst.status === 'error') error++;
+      else if (inst.status === 'warning') warning++;
+      else normal++;
+    }
+    return { normal, warning, error };
+  }, [instances]);
 
   useEffect(() => {
-    if (!meshRef.current || !statusMeshRef.current) return;
+    if (!meshRef.current) return;
     const tempMatrix = new THREE.Matrix4();
     const q = new THREE.Quaternion();
     const euler = new THREE.Euler();
     const tempColor = new THREE.Color();
     const statusPos = new THREE.Vector3();
     const oneScale = new THREE.Vector3(1, 1, 1);
-    const normalStatusColor = new THREE.Color('#52c41a');
-    const statusColor = new THREE.Color();
+    const pos = new THREE.Vector3();
+    let normalIdx = 0;
+    let warningIdx = 0;
+    let errorIdx = 0;
 
     for (let i = 0; i < instances.length; i++) {
       const inst = instances[i];
       euler.set(0, inst.rotationY, 0);
       q.setFromEuler(euler);
       tempMatrix.compose(
-        new THREE.Vector3(...inst.position),
+        pos.set(inst.position[0], inst.position[1], inst.position[2]),
         q,
         new THREE.Vector3(inst.width, inst.height, inst.depth),
       );
@@ -111,7 +155,13 @@ export function InstancedCabinets({
         inst.position[2] + inst.depth / 2,
       );
       tempMatrix.compose(statusPos, q, oneScale);
-      statusMeshRef.current.setMatrixAt(i, tempMatrix);
+      if (inst.status === 'error') {
+        errorStatusMeshRef.current?.setMatrixAt(errorIdx++, tempMatrix);
+      } else if (inst.status === 'warning') {
+        warningStatusMeshRef.current?.setMatrixAt(warningIdx++, tempMatrix);
+      } else {
+        normalStatusMeshRef.current?.setMatrixAt(normalIdx++, tempMatrix);
+      }
 
       const isSelected = inst.id === selectedId;
       const isHighlighted = inst.id === highlightedId;
@@ -122,24 +172,20 @@ export function InstancedCabinets({
           statusColors[inst.status as keyof typeof statusColors] || baseColor,
         );
       meshRef.current.setColorAt(i, tempColor);
-
-      if (inst.status === 'warning' || inst.status === 'error') {
-        statusColor.copy(
-          statusColors[inst.status as keyof typeof statusColors],
-        );
-      } else {
-        statusColor.copy(normalStatusColor);
-      }
-      statusMeshRef.current.setColorAt(i, statusColor);
     }
 
     meshRef.current.instanceMatrix.needsUpdate = true;
-    statusMeshRef.current.instanceMatrix.needsUpdate = true;
     if (meshRef.current.instanceColor) {
       meshRef.current.instanceColor.needsUpdate = true;
     }
-    if (statusMeshRef.current.instanceColor) {
-      statusMeshRef.current.instanceColor.needsUpdate = true;
+    if (normalStatusMeshRef.current) {
+      normalStatusMeshRef.current.instanceMatrix.needsUpdate = true;
+    }
+    if (warningStatusMeshRef.current) {
+      warningStatusMeshRef.current.instanceMatrix.needsUpdate = true;
+    }
+    if (errorStatusMeshRef.current) {
+      errorStatusMeshRef.current.instanceMatrix.needsUpdate = true;
     }
   }, [
     baseColor,
@@ -150,6 +196,19 @@ export function InstancedCabinets({
     selectedOutlineColor,
     statusColors,
   ]);
+
+  const frameRef = useRef(0);
+  useFrame(({ clock }) => {
+    frameRef.current++;
+    if (frameRef.current % 2 !== 0) return;
+    const t = clock.getElapsedTime();
+    if (statusCounts.warning > 0) {
+      warningStatusMaterial.emissiveIntensity = 0.8 + Math.sin(t * 2) * 0.7;
+    }
+    if (statusCounts.error > 0) {
+      errorStatusMaterial.emissiveIntensity = 0.8 + Math.sin(t * 4) * 0.7;
+    }
+  });
 
   const setColorAt = useCallback((i: number, color: THREE.Color) => {
     if (!meshRef.current) return;
@@ -254,10 +313,24 @@ export function InstancedCabinets({
         onClick={handleClick}
         onDoubleClick={handleDoubleClick}
       />
-      <instancedMesh
-        ref={statusMeshRef}
-        args={[statusGeometry, statusMaterial, instances.length]}
-      />
+      {statusCounts.normal > 0 && (
+        <instancedMesh
+          ref={normalStatusMeshRef}
+          args={[statusGeometry, normalStatusMaterial, statusCounts.normal]}
+        />
+      )}
+      {statusCounts.warning > 0 && (
+        <instancedMesh
+          ref={warningStatusMeshRef}
+          args={[statusGeometry, warningStatusMaterial, statusCounts.warning]}
+        />
+      )}
+      {statusCounts.error > 0 && (
+        <instancedMesh
+          ref={errorStatusMeshRef}
+          args={[statusGeometry, errorStatusMaterial, statusCounts.error]}
+        />
+      )}
     </group>
   );
 }
