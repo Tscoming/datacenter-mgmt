@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import type { Request, Response } from 'express';
 import { getDatabaseSchema, queryDatabase, quoteIdentifier } from './db';
 import { logRequestStep } from './requestLogger';
@@ -33,6 +34,51 @@ const handleError = (res: Response, error: unknown) => {
   });
 };
 
+const mapDatacenter = (row: any) => ({
+  id: row.id,
+  name: row.name,
+  code: row.code,
+  address: row.address,
+  area: toNumber(row.area_sqm),
+  totalCabinets: toNumber(row.total_cabinets),
+  usedCabinets: toNumber(row.used_cabinets),
+  status: row.lifecycle_status,
+  description: row.description || undefined,
+  contact: row.contact || undefined,
+  phone: row.phone || undefined,
+  createdAt: row.created_at,
+  updatedAt: row.updated_at,
+});
+
+const datacenterSelectSql = (schemaName: string, whereClause = '') => `
+  with cabinet_stats as (
+    select
+      c.datacenter_id,
+      count(*)::int as total_cabinets,
+      count(distinct ri.cabinet_id)::int as used_cabinets
+    from ${schemaName}.cabinet c
+    left join ${schemaName}.rack_installation ri on ri.cabinet_id = c.id and ri.valid_to is null
+    group by c.datacenter_id
+  )
+  select
+    dc.id,
+    dc.name,
+    dc.code,
+    dc.address,
+    dc.area_sqm,
+    coalesce(cs.total_cabinets, 0) as total_cabinets,
+    coalesce(cs.used_cabinets, 0) as used_cabinets,
+    dc.lifecycle_status,
+    dc.description,
+    dc.contact,
+    dc.phone,
+    ${isoExpr('dc.created_at')} as created_at,
+    ${isoExpr('dc.updated_at')} as updated_at
+  from ${schemaName}.datacenter dc
+  left join cabinet_stats cs on cs.datacenter_id = dc.id
+  ${whereClause}
+`;
+
 const getAllDatacenters = async (req: Request, schema: string) => {
   const schemaName = quoteIdentifier(schema);
   const result = await queryDatabase<any>(
@@ -50,6 +96,173 @@ const getAllDatacenters = async (req: Request, schema: string) => {
     name: row.name,
     code: row.code,
   }));
+};
+
+const getDatacenters = async (req: Request, schema: string) => {
+  const schemaName = quoteIdentifier(schema);
+  const current = toPositiveInt(req.query.current, 1);
+  const pageSize = toPositiveInt(req.query.pageSize, 10);
+  const offset = (current - 1) * pageSize;
+  const params: unknown[] = [];
+  const filters: string[] = [];
+
+  if (req.query.name) {
+    params.push(`%${String(req.query.name)}%`);
+    filters.push(`dc.name ilike $${params.length}`);
+  }
+  if (req.query.status) {
+    params.push(String(req.query.status));
+    filters.push(`dc.lifecycle_status = $${params.length}`);
+  }
+  if (req.query.code) {
+    params.push(`%${String(req.query.code)}%`);
+    filters.push(`dc.code ilike $${params.length}`);
+  }
+
+  const whereClause = filters.length ? `where ${filters.join(' and ')}` : '';
+  params.push(pageSize, offset);
+
+  const result = await queryDatabase<any>(
+    req,
+    'datacenter.list',
+    `
+      with filtered as (
+        ${datacenterSelectSql(schemaName, whereClause)}
+      ),
+      total_count as (
+        select count(*)::int as total from filtered
+      )
+      select filtered.*, (select total from total_count) as total
+      from filtered
+      order by updated_at desc, id
+      limit $${params.length - 1} offset $${params.length}
+    `,
+    params,
+  );
+
+  return {
+    data: result.rows.map(mapDatacenter),
+    total: toNumber(result.rows[0]?.total),
+    current,
+    pageSize,
+  };
+};
+
+const getDatacenter = async (req: Request, schema: string, id: string) => {
+  const schemaName = quoteIdentifier(schema);
+  const result = await queryDatabase<any>(
+    req,
+    'datacenter.detail',
+    `${datacenterSelectSql(schemaName, 'where dc.id = $1')} limit 1`,
+    [id],
+  );
+
+  return result.rows[0] ? mapDatacenter(result.rows[0]) : null;
+};
+
+const createDatacenter = async (req: Request, schema: string) => {
+  const schemaName = quoteIdentifier(schema);
+  const body = req.body || {};
+  const id = `dc-${crypto.randomBytes(4).toString('hex')}`;
+  const result = await queryDatabase<any>(
+    req,
+    'datacenter.create',
+    `
+      insert into ${schemaName}.datacenter (
+        id,
+        name,
+        code,
+        address,
+        area_sqm,
+        lifecycle_status,
+        description,
+        contact,
+        phone,
+        created_at,
+        updated_at
+      )
+      values ($1, $2, $3, $4, $5, 'active', $6, $7, $8, now(), now())
+      returning id
+    `,
+    [
+      id,
+      String(body.name || '').trim(),
+      String(body.code || '').trim(),
+      String(body.address || '').trim(),
+      body.area === undefined || body.area === '' ? 0 : toNumber(body.area),
+      body.description ? String(body.description).trim() : null,
+      body.contact ? String(body.contact).trim() : null,
+      body.phone ? String(body.phone).trim() : null,
+    ],
+  );
+
+  return getDatacenter(req, schema, result.rows[0].id);
+};
+
+const updateDatacenter = async (req: Request, schema: string, id: string) => {
+  const schemaName = quoteIdentifier(schema);
+  const body = req.body || {};
+  const result = await queryDatabase<any>(
+    req,
+    'datacenter.update',
+    `
+      update ${schemaName}.datacenter
+      set
+        name = coalesce($2, name),
+        code = coalesce($3, code),
+        address = coalesce($4, address),
+        area_sqm = coalesce($5, area_sqm),
+        lifecycle_status = coalesce($6, lifecycle_status),
+        description = $7,
+        contact = $8,
+        phone = $9,
+        updated_at = now()
+      where id = $1
+      returning id
+    `,
+    [
+      id,
+      body.name === undefined ? null : String(body.name).trim(),
+      body.code === undefined ? null : String(body.code).trim(),
+      body.address === undefined ? null : String(body.address).trim(),
+      body.area === undefined || body.area === '' ? null : toNumber(body.area),
+      body.status === undefined ? null : String(body.status),
+      body.description === undefined ? null : String(body.description).trim() || null,
+      body.contact === undefined ? null : String(body.contact).trim() || null,
+      body.phone === undefined ? null : String(body.phone).trim() || null,
+    ],
+  );
+
+  return result.rows[0] ? getDatacenter(req, schema, result.rows[0].id) : null;
+};
+
+const deleteDatacenter = async (req: Request, schema: string, id: string) => {
+  const schemaName = quoteIdentifier(schema);
+  const cabinetCount = await queryDatabase<{ count: string }>(
+    req,
+    'datacenter.delete.check_cabinets',
+    `select count(*)::int as count from ${schemaName}.cabinet where datacenter_id = $1`,
+    [id],
+  );
+
+  if (toNumber(cabinetCount.rows[0]?.count) > 0) {
+    return {
+      deleted: false,
+      errorMessage: '该数据中心存在关联机柜，不能删除。',
+    };
+  }
+
+  const result = await queryDatabase<{ id: string }>(
+    req,
+    'datacenter.delete',
+    `delete from ${schemaName}.datacenter where id = $1 returning id`,
+    [id],
+  );
+
+  return {
+    deleted: result.rows.length > 0,
+    errorMessage: result.rows.length > 0 ? undefined : '数据中心不存在',
+  };
 };
 
 const getAllDeviceTemplates = async (req: Request, schema: string, category?: string) => {
@@ -598,6 +811,84 @@ const withSchema = async <T>(req: Request, res: Response, label: string, run: (s
 export default {
   'GET /api/idc/datacenters/all': (req: Request, res: Response) =>
     withSchema(req, res, '3d.datacenters.all', (schema) => getAllDatacenters(req, schema)),
+
+  'GET /api/idc/datacenters': async (req: Request, res: Response) => {
+    try {
+      const schema = getDatabaseSchema();
+      logRequestStep(req, 'db:schema', schema);
+      const result = await getDatacenters(req, schema);
+      logDataCount(req, 'datacenter.list', result.data);
+      res.json({
+        success: true,
+        data: result.data,
+        total: result.total,
+        current: result.current,
+        pageSize: result.pageSize,
+      });
+    } catch (error) {
+      handleError(res, error);
+    }
+  },
+
+  'GET /api/idc/datacenters/:id': async (req: Request, res: Response) => {
+    try {
+      const schema = getDatabaseSchema();
+      logRequestStep(req, 'db:schema', schema);
+      const data = await getDatacenter(req, schema, firstParam(req.params.id));
+      logDataCount(req, 'datacenter.detail', data);
+      if (!data) {
+        res.status(404).json({ success: false, errorMessage: '数据中心不存在' });
+        return;
+      }
+      res.json({ success: true, data });
+    } catch (error) {
+      handleError(res, error);
+    }
+  },
+
+  'POST /api/idc/datacenters': async (req: Request, res: Response) => {
+    try {
+      const schema = getDatabaseSchema();
+      logRequestStep(req, 'db:schema', schema);
+      const data = await createDatacenter(req, schema);
+      logDataCount(req, 'datacenter.create', data);
+      res.json({ success: true, data });
+    } catch (error) {
+      handleError(res, error);
+    }
+  },
+
+  'PUT /api/idc/datacenters/:id': async (req: Request, res: Response) => {
+    try {
+      const schema = getDatabaseSchema();
+      logRequestStep(req, 'db:schema', schema);
+      const data = await updateDatacenter(req, schema, firstParam(req.params.id));
+      logDataCount(req, 'datacenter.update', data);
+      if (!data) {
+        res.status(404).json({ success: false, errorMessage: '数据中心不存在' });
+        return;
+      }
+      res.json({ success: true, data });
+    } catch (error) {
+      handleError(res, error);
+    }
+  },
+
+  'DELETE /api/idc/datacenters/:id': async (req: Request, res: Response) => {
+    try {
+      const schema = getDatabaseSchema();
+      logRequestStep(req, 'db:schema', schema);
+      const result = await deleteDatacenter(req, schema, firstParam(req.params.id));
+      logDataCount(req, 'datacenter.delete', result.deleted ? result : null);
+      if (!result.deleted) {
+        res.status(400).json({ success: false, errorMessage: result.errorMessage });
+        return;
+      }
+      res.json({ success: true });
+    } catch (error) {
+      handleError(res, error);
+    }
+  },
 
   'GET /api/idc/device-templates/all': (req: Request, res: Response) =>
     withSchema(req, res, '3d.device_templates.all', (schema) =>
