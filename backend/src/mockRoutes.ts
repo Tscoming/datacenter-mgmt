@@ -23,7 +23,12 @@ const mockModulePaths = [
 export const loadMockRouteModules = () => {
   const modulePaths =
     getApiDataSource() === 'database'
-      ? ['./databaseAuthRoutes', './databaseDashboardRoutes', './databaseEnvironmentRoutes']
+      ? [
+          './databaseAuthRoutes',
+          './databaseDashboardRoutes',
+          './databaseEnvironmentRoutes',
+          './database3dRoutes',
+        ]
       : mockModulePaths;
 
   return modulePaths.map((modulePath) => {
