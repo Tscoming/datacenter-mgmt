@@ -38,7 +38,42 @@ app.use((req, res) => {
   });
 });
 
-app.listen(port, host, () => {
+const server = app.listen(port, host, () => {
   console.log(`Backend API listening on http://${host}:${port}`);
   console.log(`Registered ${routeCount} API routes`);
 });
+
+server.on('error', (error: NodeJS.ErrnoException) => {
+  if (error.code === 'EADDRINUSE') {
+    console.error(`Backend API port is already in use: http://${host}:${port}`);
+  } else {
+    console.error(error);
+  }
+  process.exit(1);
+});
+
+let shuttingDown = false;
+
+const shutdown = (signal: NodeJS.Signals) => {
+  if (shuttingDown) return;
+  shuttingDown = true;
+
+  console.log(`Received ${signal}; closing backend API server...`);
+  server.close((error) => {
+    if (error) {
+      console.error(error);
+      process.exit(1);
+      return;
+    }
+    process.exit(0);
+  });
+
+  setTimeout(() => {
+    console.error('Timed out closing backend API server.');
+    process.exit(1);
+  }, 3000).unref();
+};
+
+process.on('SIGINT', shutdown);
+process.on('SIGTERM', shutdown);
+process.on('SIGHUP', shutdown);

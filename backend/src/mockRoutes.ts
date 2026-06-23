@@ -1,3 +1,5 @@
+import { getApiDataSource } from './db';
+
 const mockModulePaths = [
   '../mock/user',
   '../mock/notices',
@@ -18,8 +20,14 @@ const mockModulePaths = [
   '../mock/alert.mock',
 ];
 
-export const loadMockRouteModules = () =>
-  mockModulePaths.map((modulePath) => {
+export const loadMockRouteModules = () => {
+  const modulePaths =
+    getApiDataSource() === 'database'
+      ? ['./databaseAuthRoutes', './databaseDashboardRoutes', './databaseEnvironmentRoutes']
+      : mockModulePaths;
+
+  return modulePaths.map((modulePath) => {
     const routeModule = require(modulePath);
     return routeModule.default || routeModule;
   });
+};
