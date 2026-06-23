@@ -1,4 +1,5 @@
 import type { Request, Response } from 'express';
+import { devicesData } from './device.mock';
 import { uuidv4 } from './utils';
 
 // Mock 连线数据
@@ -12,9 +13,9 @@ let connections: IDC.Connection[] = [
         cableColor: '#3498db',
         cableLength: 3,
         sourceDeviceId: 'dev-001',
-        sourcePortId: 'port-001-sfp-1',
+        sourcePortId: 'port-dev-001-sfp-1',
         targetDeviceId: 'dev-002',
-        targetPortId: 'port-002-sfp-1',
+        targetPortId: 'port-dev-002-sfp-1',
         status: 'active',
         description: '核心到接入上联-1',
         createdAt: '2023-02-25T08:00:00Z',
@@ -28,9 +29,9 @@ let connections: IDC.Connection[] = [
         cableColor: '#3498db',
         cableLength: 3,
         sourceDeviceId: 'dev-001',
-        sourcePortId: 'port-001-sfp-2',
+        sourcePortId: 'port-dev-001-sfp-2',
         targetDeviceId: 'dev-002',
-        targetPortId: 'port-002-sfp-2',
+        targetPortId: 'port-dev-002-sfp-2',
         status: 'active',
         description: '核心到接入上联-2',
         createdAt: '2023-02-25T08:00:00Z',
@@ -45,9 +46,9 @@ let connections: IDC.Connection[] = [
         cableColor: '#2ecc71',
         cableLength: 2,
         sourceDeviceId: 'dev-002',
-        sourcePortId: 'port-002-rj45-1',
+        sourcePortId: 'port-dev-002-rj45-1',
         targetDeviceId: 'dev-003',
-        targetPortId: 'port-003-eth-1',
+        targetPortId: 'port-dev-003-eth-1',
         status: 'active',
         description: '服务器A1-1业务网络',
         createdAt: '2023-03-20T08:00:00Z',
@@ -61,9 +62,9 @@ let connections: IDC.Connection[] = [
         cableColor: '#2ecc71',
         cableLength: 2,
         sourceDeviceId: 'dev-002',
-        sourcePortId: 'port-002-rj45-2',
+        sourcePortId: 'port-dev-002-rj45-2',
         targetDeviceId: 'dev-003',
-        targetPortId: 'port-003-eth-2',
+        targetPortId: 'port-dev-003-eth-2',
         status: 'active',
         description: '服务器A1-1管理网络',
         createdAt: '2023-03-20T08:00:00Z',
@@ -77,9 +78,9 @@ let connections: IDC.Connection[] = [
         cableColor: '#2ecc71',
         cableLength: 2,
         sourceDeviceId: 'dev-002',
-        sourcePortId: 'port-002-rj45-3',
+        sourcePortId: 'port-dev-002-rj45-3',
         targetDeviceId: 'dev-004',
-        targetPortId: 'port-004-eth-1',
+        targetPortId: 'port-dev-004-eth-1',
         status: 'active',
         description: '服务器A1-2业务网络',
         createdAt: '2023-03-20T08:00:00Z',
@@ -93,9 +94,9 @@ let connections: IDC.Connection[] = [
         cableColor: '#2ecc71',
         cableLength: 2,
         sourceDeviceId: 'dev-002',
-        sourcePortId: 'port-002-rj45-4',
+        sourcePortId: 'port-dev-002-rj45-4',
         targetDeviceId: 'dev-005',
-        targetPortId: 'port-005-eth-1',
+        targetPortId: 'port-dev-005-eth-1',
         status: 'active',
         description: '数据库服务器业务网络',
         createdAt: '2023-04-10T08:00:00Z',
@@ -110,9 +111,9 @@ let connections: IDC.Connection[] = [
         cableColor: '#e67e22',
         cableLength: 5,
         sourceDeviceId: 'dev-006',
-        sourcePortId: 'port-006-sfp-1',
+        sourcePortId: 'port-dev-006-sfp-1',
         targetDeviceId: 'dev-007',
-        targetPortId: 'port-007-sfp-1',
+        targetPortId: 'port-dev-007-sfp-1',
         status: 'active',
         description: '防火墙到负载均衡',
         createdAt: '2023-02-10T08:00:00Z',
@@ -121,17 +122,17 @@ let connections: IDC.Connection[] = [
     // 存储连线
     {
         id: 'conn-008',
-        cableNumber: 'BJ-FC-001',
+        cableNumber: 'BJ-ISCSI-001',
         connectionType: 'storage',
-        cableType: 'MultiModeFiber',
+        cableType: 'Cat6a',
         cableColor: '#9b59b6',
         cableLength: 10,
         sourceDeviceId: 'dev-005',
-        sourcePortId: 'port-005-fc-1',
+        sourcePortId: 'port-dev-005-eth-2',
         targetDeviceId: 'dev-008',
-        targetPortId: 'port-008-fc-1',
+        targetPortId: 'port-dev-008-iscsi-1',
         status: 'active',
-        description: '数据库到存储FC连接',
+        description: '数据库到存储iSCSI连接',
         createdAt: '2023-05-15T08:00:00Z',
         updatedAt: '2024-09-20T09:00:00Z',
     },
@@ -144,9 +145,9 @@ let connections: IDC.Connection[] = [
         cableColor: '#3498db',
         cableLength: 15,
         sourceDeviceId: 'dev-001',
-        sourcePortId: 'port-001-sfp-3',
+        sourcePortId: 'port-dev-001-sfp-3',
         targetDeviceId: 'dev-006',
-        targetPortId: 'port-006-sfp-2',
+        targetPortId: 'port-dev-006-sfp-2',
         status: 'active',
         description: '核心交换机到防火墙',
         createdAt: '2023-02-10T08:00:00Z',
@@ -161,9 +162,9 @@ let connections: IDC.Connection[] = [
         cableColor: '#27ae60',
         cableLength: 3,
         sourceDeviceId: 'dev-002',
-        sourcePortId: 'port-002-rj45-47',
+        sourcePortId: 'port-dev-002-rj45-47',
         targetDeviceId: 'dev-003',
-        targetPortId: 'port-003-mgmt',
+        targetPortId: 'port-dev-003-mgmt',
         status: 'active',
         description: '服务器IPMI管理',
         createdAt: '2023-03-20T08:00:00Z',
@@ -177,6 +178,19 @@ const waitTime = (time: number = 100) => {
             resolve(true);
         }, time);
     });
+};
+
+const getDatacenterIdByCabinetId = (cabinetId: string) => {
+    if (cabinetId.startsWith('cab-bj-')) return 'dc-001';
+    if (cabinetId.startsWith('cab-sh-')) return 'dc-002';
+    if (cabinetId.startsWith('cab-sz-')) return 'dc-003';
+    if (cabinetId.startsWith('cab-cd-')) return 'dc-004';
+    return undefined;
+};
+
+const getDeviceDatacenterId = (deviceId: string) => {
+    const device = devicesData.find(d => d.id === deviceId);
+    return device ? getDatacenterIdByCabinetId(device.cabinetId) : undefined;
 };
 
 export default {
@@ -320,11 +334,15 @@ export default {
     // 获取数据中心的所有连线（3D视图用）
     'GET /api/idc/connections/by-datacenter/:datacenterId': async (req: Request, res: Response) => {
         await waitTime(300);
-        // 实际应该根据设备所在机柜的datacenterId来过滤
-        // 这里简化返回所有连线
+        const { datacenterId } = req.params;
+        const dcConnections = connections.filter(c =>
+            getDeviceDatacenterId(c.sourceDeviceId) === datacenterId ||
+            getDeviceDatacenterId(c.targetDeviceId) === datacenterId
+        );
+
         res.json({
             success: true,
-            data: connections,
+            data: dcConnections,
         });
     },
 

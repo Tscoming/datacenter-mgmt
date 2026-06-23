@@ -2,7 +2,7 @@
   "name": "datacenter-mgmt",
   "private": true,
   "scripts": {
-    "dev": "npm run dev:backend & npm run dev:frontend",
+    "dev": "node scripts/dev.js",
     "dev:backend": "npm run --workspace backend dev",
     "dev:frontend": "npm run --workspace frontend start:dev",
     "build": "npm run --workspace frontend build && npm run --workspace backend build",

@@ -5,7 +5,10 @@ const generatePorts = (deviceId: string, templateId: string): IDC.Port[] => {
     const ports: IDC.Port[] = [];
 
     // 根据模板ID生成不同的端口
-    if (templateId === 'tpl-huawei-s5735-48t4x') {
+    if (
+        templateId === 'tpl-huawei-s5735-48t4x' ||
+        templateId === 'tpl-cisco-c9300-48p'
+    ) {
         // 48个RJ45端口
         for (let i = 1; i <= 48; i++) {
             ports.push({
@@ -53,7 +56,10 @@ const generatePorts = (deviceId: string, templateId: string): IDC.Port[] => {
                 description: i <= 2 ? `上联核心交换机-${i}` : undefined,
             });
         }
-    } else if (templateId === 'tpl-huawei-s6730-48x6c') {
+    } else if (
+        templateId === 'tpl-huawei-s6730-48x6c' ||
+        templateId === 'tpl-cisco-n9k-93180yc'
+    ) {
         // 48个SFP+端口
         for (let i = 1; i <= 48; i++) {
             ports.push({
@@ -82,6 +88,141 @@ const generatePorts = (deviceId: string, templateId: string): IDC.Port[] => {
                 portNumber: `100GE1/0/${i}`,
                 portType: 'QSFP28',
                 speed: '100G',
+                status: 'up',
+                linkStatus: i <= 2 ? 'connected' : 'disconnected',
+                lastUpdated: '2024-12-01T10:00:00Z',
+            });
+        }
+    } else if (templateId === 'tpl-h3c-s6850-56hf') {
+        for (let i = 1; i <= 48; i++) {
+            ports.push({
+                id: `port-${deviceId}-sfp-${i}`,
+                deviceId,
+                portGroupId: 'pg-1',
+                portNumber: `XGE1/0/${i}`,
+                portType: 'SFP+',
+                speed: '10G',
+                status: 'up',
+                linkStatus: i <= 24 ? 'connected' : 'disconnected',
+                vlanConfig: {
+                    mode: 'trunk',
+                    pvid: 1,
+                    allowedVlans: [1, 100, 101, 102, 103, 104, 200, 300],
+                },
+                lastUpdated: '2024-12-01T10:00:00Z',
+            });
+        }
+        for (let i = 1; i <= 8; i++) {
+            ports.push({
+                id: `port-${deviceId}-qsfp-${i}`,
+                deviceId,
+                portGroupId: 'pg-2',
+                portNumber: `40GE1/0/${i}`,
+                portType: 'QSFP+',
+                speed: '40G',
+                status: 'up',
+                linkStatus: i <= 2 ? 'connected' : 'disconnected',
+                lastUpdated: '2024-12-01T10:00:00Z',
+            });
+        }
+    } else if (templateId === 'tpl-huawei-oceanstor-5500') {
+        for (let i = 1; i <= 2; i++) {
+            ports.push({
+                id: `port-${deviceId}-mgmt-${i}`,
+                deviceId,
+                portGroupId: 'pg-1',
+                portNumber: `Mgmt${i}`,
+                portType: 'RJ45',
+                speed: '1G',
+                status: 'up',
+                linkStatus: i === 1 ? 'connected' : 'disconnected',
+                lastUpdated: '2024-12-01T10:00:00Z',
+            });
+        }
+        for (let i = 1; i <= 8; i++) {
+            ports.push({
+                id: `port-${deviceId}-fc-${i}`,
+                deviceId,
+                portGroupId: 'pg-2',
+                portNumber: `FC${i}`,
+                portType: 'FC',
+                speed: '10G',
+                status: 'up',
+                linkStatus: i <= 2 ? 'connected' : 'disconnected',
+                lastUpdated: '2024-12-01T10:00:00Z',
+            });
+        }
+        for (let i = 1; i <= 4; i++) {
+            ports.push({
+                id: `port-${deviceId}-iscsi-${i}`,
+                deviceId,
+                portGroupId: 'pg-3',
+                portNumber: `iSCSI${i}`,
+                portType: 'RJ45',
+                speed: '10G',
+                status: 'up',
+                linkStatus: i <= 2 ? 'connected' : 'disconnected',
+                lastUpdated: '2024-12-01T10:00:00Z',
+            });
+        }
+    } else if (templateId === 'tpl-huawei-usg6680') {
+        ports.push({
+            id: `port-${deviceId}-mgmt`,
+            deviceId,
+            portGroupId: 'pg-1',
+            portNumber: 'Mgmt',
+            portType: 'RJ45',
+            speed: '1G',
+            status: 'up',
+            linkStatus: 'connected',
+            lastUpdated: '2024-12-01T10:00:00Z',
+        });
+        for (let i = 1; i <= 8; i++) {
+            ports.push({
+                id: `port-${deviceId}-rj45-${i}`,
+                deviceId,
+                portGroupId: 'pg-2',
+                portNumber: `GE0/0/${i}`,
+                portType: 'RJ45',
+                speed: '1G',
+                status: 'up',
+                linkStatus: i <= 4 ? 'connected' : 'disconnected',
+                lastUpdated: '2024-12-01T10:00:00Z',
+            });
+        }
+        for (let i = 1; i <= 4; i++) {
+            ports.push({
+                id: `port-${deviceId}-sfp-${i}`,
+                deviceId,
+                portGroupId: 'pg-3',
+                portNumber: `XGE0/0/${i}`,
+                portType: 'SFP+',
+                speed: '10G',
+                status: 'up',
+                linkStatus: i <= 2 ? 'connected' : 'disconnected',
+                lastUpdated: '2024-12-01T10:00:00Z',
+            });
+        }
+    } else if (templateId === 'tpl-f5-big-ip-i5800') {
+        ports.push({
+            id: `port-${deviceId}-mgmt`,
+            deviceId,
+            portGroupId: 'pg-1',
+            portNumber: 'Mgmt',
+            portType: 'RJ45',
+            speed: '1G',
+            status: 'up',
+            linkStatus: 'connected',
+            lastUpdated: '2024-12-01T10:00:00Z',
+        });
+        for (let i = 1; i <= 8; i++) {
+            ports.push({
+                id: `port-${deviceId}-sfp-${i}`,
+                deviceId,
+                portGroupId: 'pg-2',
+                portNumber: `XGE1/${i}`,
+                portType: 'SFP+',
+                speed: '10G',
                 status: 'up',
                 linkStatus: i <= 2 ? 'connected' : 'disconnected',
                 lastUpdated: '2024-12-01T10:00:00Z',

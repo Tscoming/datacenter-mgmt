@@ -2,8 +2,8 @@ import type { Request, Response } from 'express';
 
 // 数据中心列表 (模拟)
 const datacenters = [
-    { id: 'dc-001', name: '北京数据中心', code: 'BJ-DC1' },
-    { id: 'dc-002', name: '上海数据中心', code: 'SH-DC1' },
+    { id: 'dc-001', name: '北京亦庄数据中心', code: 'BJ-YZ-DC01' },
+    { id: 'dc-002', name: '上海嘉定数据中心', code: 'SH-JD-DC01' },
 ];
 
 // 电源拓扑节点 - 带数据中心标识
@@ -17,10 +17,10 @@ const powerNodes = [
     { id: 'pdu-002', type: 'pdu', name: 'PDU-B-01', status: 'online', load: 1650, capacity: 3000, datacenterId: 'dc-001' },
     { id: 'pdu-003', type: 'pdu', name: 'PDU-A-02', status: 'online', load: 2400, capacity: 5000, datacenterId: 'dc-001' },
     { id: 'pdu-004', type: 'pdu', name: 'PDU-B-02', status: 'warning', load: 4200, capacity: 5000, datacenterId: 'dc-001' },
-    { id: 'dev-001', type: 'device', name: 'Server-01', status: 'online', load: 300, datacenterId: 'dc-001' },
-    { id: 'dev-002', type: 'device', name: 'Server-02', status: 'online', load: 350, datacenterId: 'dc-001' },
-    { id: 'dev-003', type: 'device', name: 'Switch-01', status: 'online', load: 150, datacenterId: 'dc-001' },
-    { id: 'dev-004', type: 'device', name: 'Storage-01', status: 'online', load: 400, datacenterId: 'dc-001' },
+    { id: 'dev-001', type: 'device', name: '核心交换机-A1', status: 'online', load: 300, datacenterId: 'dc-001' },
+    { id: 'dev-002', type: 'device', name: '接入交换机-A1-1', status: 'online', load: 350, datacenterId: 'dc-001' },
+    { id: 'dev-003', type: 'device', name: '应用服务器-A1-1', status: 'online', load: 150, datacenterId: 'dc-001' },
+    { id: 'dev-004', type: 'device', name: '应用服务器-A1-2', status: 'online', load: 400, datacenterId: 'dc-001' },
 
     // 上海数据中心
     { id: 'utility-101', type: 'utility', name: '市电A路', status: 'online', capacity: 40000, datacenterId: 'dc-002' },
@@ -29,8 +29,8 @@ const powerNodes = [
     { id: 'ups-102', type: 'ups', name: 'UPS-B-01', status: 'online', load: 10500, capacity: 25000, datacenterId: 'dc-002' },
     { id: 'pdu-101', type: 'pdu', name: 'PDU-A-01', status: 'online', load: 2000, capacity: 4000, datacenterId: 'dc-002' },
     { id: 'pdu-102', type: 'pdu', name: 'PDU-B-01', status: 'online', load: 1800, capacity: 4000, datacenterId: 'dc-002' },
-    { id: 'dev-101', type: 'device', name: 'Server-101', status: 'online', load: 280, datacenterId: 'dc-002' },
-    { id: 'dev-102', type: 'device', name: 'Server-102', status: 'warning', load: 320, datacenterId: 'dc-002' },
+    { id: 'dev-009', type: 'device', name: '接入交换机-B1-1', status: 'online', load: 280, datacenterId: 'dc-002' },
+    { id: 'dev-010', type: 'device', name: '核心交换机-B1', status: 'warning', load: 320, datacenterId: 'dc-002' },
 ];
 
 // 电源链路 - 带数据中心标识
@@ -55,9 +55,9 @@ const powerLinks = [
     { id: 'link-102', source: 'utility-102', target: 'ups-102', powerPath: 'B', status: 'active', datacenterId: 'dc-002' },
     { id: 'link-103', source: 'ups-101', target: 'pdu-101', powerPath: 'A', status: 'active', datacenterId: 'dc-002' },
     { id: 'link-104', source: 'ups-102', target: 'pdu-102', powerPath: 'B', status: 'active', datacenterId: 'dc-002' },
-    { id: 'link-105', source: 'pdu-101', target: 'dev-101', powerPath: 'A', status: 'active', datacenterId: 'dc-002' },
-    { id: 'link-106', source: 'pdu-102', target: 'dev-101', powerPath: 'B', status: 'active', datacenterId: 'dc-002' },
-    { id: 'link-107', source: 'pdu-101', target: 'dev-102', powerPath: 'A', status: 'active', datacenterId: 'dc-002' },
+    { id: 'link-105', source: 'pdu-101', target: 'dev-009', powerPath: 'A', status: 'active', datacenterId: 'dc-002' },
+    { id: 'link-106', source: 'pdu-102', target: 'dev-009', powerPath: 'B', status: 'active', datacenterId: 'dc-002' },
+    { id: 'link-107', source: 'pdu-101', target: 'dev-010', powerPath: 'A', status: 'active', datacenterId: 'dc-002' },
 ];
 
 // 按数据中心过滤节点

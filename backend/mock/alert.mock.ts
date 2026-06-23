@@ -226,7 +226,18 @@ export default {
     // 获取告警列表
     'GET /api/idc/alerts': async (req: Request, res: Response) => {
         await waitTime(300);
-        const { current = 1, pageSize = 10, level, acknowledged, type } = req.query;
+        const {
+            current = 1,
+            pageSize = 10,
+            level,
+            acknowledged,
+            type,
+            startTime,
+            endTime,
+            deviceId,
+            cabinetId,
+            datacenterId,
+        } = req.query;
 
         let filtered = [...mockAlerts];
 
@@ -239,6 +250,21 @@ export default {
         }
         if (type) {
             filtered = filtered.filter(a => a.type === type);
+        }
+        if (deviceId) {
+            filtered = filtered.filter(a => a.deviceId === deviceId);
+        }
+        if (cabinetId) {
+            filtered = filtered.filter(a => a.cabinetId === cabinetId);
+        }
+        if (datacenterId) {
+            filtered = filtered.filter(a => a.datacenterId === datacenterId);
+        }
+        if (startTime) {
+            filtered = filtered.filter(a => new Date(a.createdAt).getTime() >= new Date(startTime as string).getTime());
+        }
+        if (endTime) {
+            filtered = filtered.filter(a => new Date(a.createdAt).getTime() <= new Date(endTime as string).getTime());
         }
 
         // 分页
@@ -258,6 +284,7 @@ export default {
     // 获取告警统计
     'GET /api/idc/alerts/stats': async (_req: Request, res: Response) => {
         await waitTime(200);
+        const today = new Date().toISOString().split('T')[0];
 
         const stats: IDC.AlertStats = {
             total: mockAlerts.length,
@@ -266,7 +293,7 @@ export default {
             warning: mockAlerts.filter(a => a.level === 'warning').length,
             info: mockAlerts.filter(a => a.level === 'info').length,
             unacknowledged: mockAlerts.filter(a => !a.acknowledged).length,
-            todayNew: 3,
+            todayNew: mockAlerts.filter(a => a.createdAt.startsWith(today)).length,
             avgResolveTime: 45,
         };
 
@@ -321,6 +348,25 @@ export default {
         });
 
         res.json({ success: true, message: `已批量确认 ${ids.length} 条告警` });
+    },
+
+    // 批量解决告警
+    'POST /api/idc/alerts/batch-resolve': async (req: Request, res: Response) => {
+        await waitTime(500);
+        const { ids } = req.body;
+
+        ids.forEach((id: string) => {
+            const alert = mockAlerts.find(a => a.id === id);
+            if (alert) {
+                alert.acknowledged = true;
+                alert.acknowledgedAt = alert.acknowledgedAt || new Date().toISOString();
+                alert.acknowledgedBy = alert.acknowledgedBy || '当前用户';
+                alert.resolvedAt = new Date().toISOString();
+                alert.resolvedBy = '当前用户';
+            }
+        });
+
+        res.json({ success: true, message: `已批量解决 ${ids.length} 条告警` });
     },
 
     // 获取告警规则列表

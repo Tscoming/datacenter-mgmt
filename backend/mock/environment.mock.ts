@@ -8,9 +8,32 @@ const waitTime = (time: number = 100) => {
     });
 };
 
-// 模拟机柜ID列表
-const cabinetIds = ['cab-bj-001', 'cab-bj-002', 'cab-bj-003', 'cab-sh-001', 'cab-sh-002', 'cab-sz-001'];
-const cabinetNames = ['A区1排1号', 'A区1排2号', 'A区1排3号', 'B区1排1号', 'B区1排2号', 'C区1排1号'];
+const cabinetInfos = [
+    ...Array.from({ length: 20 }, (_, i) => ({
+        id: `cab-bj-${String(i + 1).padStart(3, '0')}`,
+        name: `A区${Math.floor(i / 5) + 1}排${(i % 5) + 1}号`,
+        datacenterId: 'dc-001',
+        datacenterName: '北京亦庄数据中心',
+    })),
+    ...Array.from({ length: 15 }, (_, i) => ({
+        id: `cab-sh-${String(i + 1).padStart(3, '0')}`,
+        name: `B区${Math.floor(i / 5) + 1}排${(i % 5) + 1}号`,
+        datacenterId: 'dc-002',
+        datacenterName: '上海嘉定数据中心',
+    })),
+    ...Array.from({ length: 18 }, (_, i) => ({
+        id: `cab-sz-${String(i + 1).padStart(3, '0')}`,
+        name: `C区${Math.floor(i / 6) + 1}排${(i % 6) + 1}号`,
+        datacenterId: 'dc-003',
+        datacenterName: '深圳坪山数据中心',
+    })),
+    ...Array.from({ length: 12 }, (_, i) => ({
+        id: `cab-cd-${String(i + 1).padStart(3, '0')}`,
+        name: `D区${Math.floor(i / 4) + 1}排${(i % 4) + 1}号`,
+        datacenterId: 'dc-004',
+        datacenterName: '成都天府数据中心',
+    })),
+];
 
 // 生成随机温度数据
 const generateTemperature = (base: number = 24, variance: number = 4) => {
@@ -28,17 +51,17 @@ export default {
     'GET /api/idc/environment/cabinets': async (_req: Request, res: Response) => {
         await waitTime(300);
 
-        const data: IDC.CabinetEnvironment[] = cabinetIds.map((id, index) => {
+        const data: IDC.CabinetEnvironment[] = cabinetInfos.map((cabinet) => {
             const avgTemp = generateTemperature(24);
             const maxTemp = avgTemp + Math.random() * 3;
             const minTemp = avgTemp - Math.random() * 2;
             const status = avgTemp > 28 ? 'critical' : avgTemp > 26 ? 'warning' : 'normal';
 
             return {
-                cabinetId: id,
-                cabinetName: cabinetNames[index],
-                datacenterId: index < 3 ? 'dc-001' : index < 5 ? 'dc-002' : 'dc-003',
-                datacenterName: index < 3 ? '北京亦庄' : index < 5 ? '上海嘉定' : '深圳坪山',
+                cabinetId: cabinet.id,
+                cabinetName: cabinet.name,
+                datacenterId: cabinet.datacenterId,
+                datacenterName: cabinet.datacenterName,
                 avgTemperature: Math.round(avgTemp * 10) / 10,
                 maxTemperature: Math.round(maxTemp * 10) / 10,
                 minTemperature: Math.round(minTemp * 10) / 10,
@@ -54,13 +77,13 @@ export default {
     'GET /api/idc/environment/cabinet/:cabinetId': async (req: Request, res: Response) => {
         await waitTime(200);
         const { cabinetId } = req.params;
-        const index = cabinetIds.indexOf(cabinetId);
+        const cabinet = cabinetInfos.find(c => c.id === cabinetId);
 
         const sensors: IDC.EnvironmentSensor[] = [
             {
                 id: `sensor-${cabinetId}-front`,
                 cabinetId,
-                cabinetName: cabinetNames[index] || '未知机柜',
+                cabinetName: cabinet?.name || '未知机柜',
                 position: 'front',
                 temperature: generateTemperature(23),
                 humidity: generateHumidity(45),
@@ -69,7 +92,7 @@ export default {
             {
                 id: `sensor-${cabinetId}-rear`,
                 cabinetId,
-                cabinetName: cabinetNames[index] || '未知机柜',
+                cabinetName: cabinet?.name || '未知机柜',
                 position: 'rear',
                 temperature: generateTemperature(28),
                 humidity: generateHumidity(40),
@@ -78,7 +101,7 @@ export default {
             {
                 id: `sensor-${cabinetId}-top`,
                 cabinetId,
-                cabinetName: cabinetNames[index] || '未知机柜',
+                cabinetName: cabinet?.name || '未知机柜',
                 position: 'top',
                 temperature: generateTemperature(26),
                 humidity: generateHumidity(42),
@@ -168,14 +191,14 @@ export default {
         await waitTime(300);
         const { cabinetId } = req.query;
 
-        const data: IDC.PowerConsumption[] = cabinetIds
-            .filter(id => !cabinetId || id === cabinetId)
-            .map((id, index) => ({
-                id: `power-${id}`,
-                cabinetId: id,
-                cabinetName: cabinetNames[index],
-                datacenterId: index < 3 ? 'dc-001' : index < 5 ? 'dc-002' : 'dc-003',
-                datacenterName: index < 3 ? '北京亦庄' : index < 5 ? '上海嘉定' : '深圳坪山',
+        const data: IDC.PowerConsumption[] = cabinetInfos
+            .filter(cabinet => !cabinetId || cabinet.id === cabinetId)
+            .map((cabinet) => ({
+                id: `power-${cabinet.id}`,
+                cabinetId: cabinet.id,
+                cabinetName: cabinet.name,
+                datacenterId: cabinet.datacenterId,
+                datacenterName: cabinet.datacenterName,
                 timestamp: new Date().toISOString(),
                 activePower: Math.round((3 + Math.random() * 4) * 100) / 100,
                 apparentPower: Math.round((3.5 + Math.random() * 4.5) * 100) / 100,
@@ -193,8 +216,8 @@ export default {
         await waitTime(200);
 
         const overview = {
-            totalCabinets: 53,
-            normalCabinets: 48,
+            totalCabinets: 65,
+            normalCabinets: 60,
             warningCabinets: 4,
             criticalCabinets: 1,
             avgTemperature: 24.5,

@@ -16,14 +16,14 @@ export default {
 
         const stats: IDC.DashboardStats = {
             datacenterCount: 4,
-            cabinetCount: 53,
+            cabinetCount: 65,
             deviceCount: 12,
             connectionCount: 10,
-            onlineDevices: 10,
+            onlineDevices: 11,
             offlineDevices: 0,
             warningDevices: 1,
             errorDevices: 0,
-            cabinetUsageRate: 0.78,
+            cabinetUsageRate: 1,
             uUsageRate: 0.65,
             recentAlerts: [
                 {
@@ -122,8 +122,8 @@ export default {
         await waitTime(200);
 
         const data = [
-            { category: 'switch', label: '交换机', count: 6, color: '#1890ff' },
-            { category: 'server', label: '服务器', count: 3, color: '#52c41a' },
+            { category: 'switch', label: '交换机', count: 5, color: '#1890ff' },
+            { category: 'server', label: '服务器', count: 4, color: '#52c41a' },
             { category: 'storage', label: '存储', count: 1, color: '#faad14' },
             { category: 'firewall', label: '防火墙', count: 1, color: '#f5222d' },
             { category: 'loadbalancer', label: '负载均衡', count: 1, color: '#722ed1' },
@@ -140,28 +140,28 @@ export default {
             {
                 datacenterId: 'dc-001',
                 name: '北京亦庄',
-                cabinetUsage: 0.78,
+                cabinetUsage: 1,
                 powerUsage: 0.65,
                 deviceCount: 8,
             },
             {
                 datacenterId: 'dc-002',
                 name: '上海嘉定',
-                cabinetUsage: 0.65,
+                cabinetUsage: 1,
                 powerUsage: 0.58,
                 deviceCount: 2,
             },
             {
                 datacenterId: 'dc-003',
                 name: '深圳坪山',
-                cabinetUsage: 0.73,
+                cabinetUsage: 1,
                 powerUsage: 0.62,
                 deviceCount: 2,
             },
             {
                 datacenterId: 'dc-004',
                 name: '成都天府',
-                cabinetUsage: 0.38,
+                cabinetUsage: 1,
                 powerUsage: 0.25,
                 deviceCount: 0,
             },

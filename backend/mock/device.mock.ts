@@ -1,6 +1,44 @@
 import type { Request, Response } from 'express';
 import { uuidv4 } from './utils';
 
+const templateUHeightMap: Record<string, number> = {
+    'tpl-huawei-s5735-48t4x': 1,
+    'tpl-huawei-s6730-48x6c': 1,
+    'tpl-huawei-ce6881-48s6cq': 1,
+    'tpl-cisco-c9300-48p': 1,
+    'tpl-cisco-n9k-93180yc': 1,
+    'tpl-h3c-s6850-56hf': 1,
+    'tpl-ruijie-s6220-48xs6qxs': 1,
+    'tpl-huawei-2288h-v6': 2,
+    'tpl-dell-r750': 2,
+    'tpl-hpe-dl380-gen10': 2,
+    'tpl-inspur-nf5280m6': 2,
+    'tpl-huawei-ne40e-x8': 14,
+    'tpl-cisco-asr-9000': 13,
+    'tpl-huawei-oceanstor-5500': 4,
+    'tpl-huawei-usg6680': 2,
+    'tpl-f5-big-ip-i5800': 1,
+};
+
+const templateCategoryMap: Record<string, IDC.DeviceTemplate['category']> = {
+    'tpl-huawei-s5735-48t4x': 'switch',
+    'tpl-huawei-s6730-48x6c': 'switch',
+    'tpl-huawei-ce6881-48s6cq': 'switch',
+    'tpl-cisco-c9300-48p': 'switch',
+    'tpl-cisco-n9k-93180yc': 'switch',
+    'tpl-h3c-s6850-56hf': 'switch',
+    'tpl-ruijie-s6220-48xs6qxs': 'switch',
+    'tpl-huawei-2288h-v6': 'server',
+    'tpl-dell-r750': 'server',
+    'tpl-hpe-dl380-gen10': 'server',
+    'tpl-inspur-nf5280m6': 'server',
+    'tpl-huawei-ne40e-x8': 'router',
+    'tpl-cisco-asr-9000': 'router',
+    'tpl-huawei-oceanstor-5500': 'storage',
+    'tpl-huawei-usg6680': 'firewall',
+    'tpl-f5-big-ip-i5800': 'loadbalancer',
+};
+
 // Mock 设备数据
 let devices: IDC.Device[] = [
     // 北京亦庄 - A区1排1号机柜设备
@@ -264,6 +302,7 @@ export default {
             assetCode,
             managementIp,
             department,
+            isMounted,
         } = req.query;
 
         let filteredData = [...devices];
@@ -288,6 +327,12 @@ export default {
         }
         if (department) {
             filteredData = filteredData.filter(d => d.department === department);
+        }
+        if (isMounted === 'true') {
+            filteredData = filteredData.filter(d => d.isMounted !== false);
+        }
+        if (isMounted === 'false') {
+            filteredData = filteredData.filter(d => d.isMounted === false);
         }
 
         const start = (Number(current) - 1) * Number(pageSize);
@@ -321,8 +366,8 @@ export default {
         await waitTime(500);
         const body = req.body as IDC.DeviceCreateParams;
         const endUFromBody = (req.body as any)?.endU as number | undefined;
+        const deviceUHeight = templateUHeightMap[body.templateId] || 1;
 
-        // 这里应该根据模板获取uHeight来计算endU
         const newDevice: IDC.Device = {
             id: `dev-${uuidv4().slice(0, 8)}`,
             templateId: body.templateId,
@@ -331,7 +376,7 @@ export default {
             name: body.name,
             serialNumber: body.serialNumber,
             startU: body.startU,
-            endU: endUFromBody ?? body.startU + 1,
+            endU: endUFromBody ?? body.startU + deviceUHeight - 1,
             managementIp: body.managementIp,
             status: 'online',
             purchaseDate: body.purchaseDate,
@@ -339,6 +384,7 @@ export default {
             vendor: body.vendor,
             owner: body.owner,
             department: body.department,
+            isMounted: true,
             description: body.description,
             createdAt: new Date().toISOString(),
             updatedAt: new Date().toISOString(),
@@ -500,14 +546,10 @@ export default {
             byDepartment: {} as Record<string, number>,
         };
 
-        // 这里需要关联模板来统计分类，简化处理
-        stats.byCategory = {
-            switch: 6,
-            server: 4,
-            storage: 1,
-            firewall: 1,
-            loadbalancer: 1,
-        };
+        devices.forEach(d => {
+            const category = templateCategoryMap[d.templateId] || 'other';
+            stats.byCategory[category] = (stats.byCategory[category] || 0) + 1;
+        });
 
         devices.forEach(d => {
             if (d.department) {
@@ -516,5 +558,21 @@ export default {
         });
 
         res.json({ success: true, data: stats });
+    },
+
+    // 设备下架（保留资产数据）
+    'POST /api/idc/devices/:id/unmount': async (req: Request, res: Response) => {
+        await waitTime(300);
+        const { id } = req.params;
+
+        const device = devices.find(d => d.id === id);
+        if (!device) {
+            res.status(404).json({ success: false, errorMessage: '设备不存在' });
+            return;
+        }
+
+        device.isMounted = false;
+        device.updatedAt = new Date().toISOString();
+        res.json({ success: true, data: device });
     },
 };
