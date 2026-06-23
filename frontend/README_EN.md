@@ -122,7 +122,7 @@ npm start
 # Start development server (without Mock data)
 npm run start:no-mock
 
-# Start development server (connect to test environment)
+# Start development server (connect to the local database-backed backend)
 npm run start:test
 ```
 

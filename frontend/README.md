@@ -122,7 +122,7 @@ npm start
 # 启动开发服务器（无 Mock 数据）
 npm run start:no-mock
 
-# 启动开发服务器（连接测试环境）
+# 启动开发服务器（连接本地数据库后端）
 npm run start:test
 ```
 
