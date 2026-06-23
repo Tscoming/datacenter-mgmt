@@ -6,6 +6,8 @@ declare namespace API {
     name?: string;
     avatar?: string;
     userid?: string;
+    id?: string;
+    username?: string;
     email?: string;
     signature?: string;
     title?: string;
@@ -21,12 +23,63 @@ declare namespace API {
     };
     address?: string;
     phone?: string;
+    role?: 'admin' | 'user';
+    status?: 'active' | 'disabled';
+    department?: string;
+    createdAt?: string;
+    updatedAt?: string;
+    lastLoginAt?: string;
   };
 
   type LoginResult = {
+    success?: boolean;
     status?: string;
     type?: string;
     currentAuthority?: string;
+    token?: string;
+    refreshToken?: string;
+    expiresAt?: number;
+    user?: CurrentUser;
+  };
+
+  type ManagedUser = {
+    id: string;
+    userid?: string;
+    username: string;
+    name: string;
+    email: string;
+    phone?: string;
+    role: 'admin' | 'user';
+    access?: string;
+    status: 'active' | 'disabled';
+    avatar?: string;
+    title?: string;
+    department?: string;
+    createdAt: string;
+    updatedAt: string;
+    lastLoginAt?: string;
+  };
+
+  type ManagedUserParams = {
+    current?: number;
+    pageSize?: number;
+    keyword?: string;
+    name?: string;
+    role?: string;
+    status?: string;
+  };
+
+  type ManagedUserPayload = {
+    username: string;
+    name: string;
+    email: string;
+    password?: string;
+    phone?: string;
+    role: 'admin' | 'user';
+    status: 'active' | 'disabled';
+    avatar?: string;
+    title?: string;
+    department?: string;
   };
 
   type PageParams = {

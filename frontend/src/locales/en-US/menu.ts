@@ -70,4 +70,6 @@ export default {
   'menu.monitor.alert.rules': 'Alert Rules',
   'menu.monitor.alert.history': 'Alert History',
   'menu.power': 'Power Management',
+  'menu.system': 'System',
+  'menu.system.users': 'User Management',
 };

@@ -154,6 +154,24 @@ export default [
       },
     ],
   },
+  {
+    path: '/system',
+    name: 'system',
+    icon: 'setting',
+    access: 'canAdmin',
+    routes: [
+      {
+        path: '/system',
+        redirect: '/system/users',
+      },
+      {
+        path: '/system/users',
+        name: 'users',
+        component: './System/User',
+        access: 'canAdmin',
+      },
+    ],
+  },
 
   {
     path: '/403',
