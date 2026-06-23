@@ -1,5 +1,5 @@
 import type { Request, Response } from 'express';
-import { v4 as uuidv4 } from 'uuid';
+import { uuidv4 } from './utils';
 
 // Mock 设备模板数据 - 预置主流品牌设备
 let deviceTemplates: IDC.DeviceTemplate[] = [

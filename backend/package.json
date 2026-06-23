@@ -1,0 +1,22 @@
+{
+  "name": "backend",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "node --watch --watch-path=src --watch-path=mock -r ts-node/register/transpile-only src/server.ts",
+    "build": "tsc -p tsconfig.json",
+    "start": "ts-node --transpile-only src/server.ts",
+    "tsc": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "dayjs": "^1.11.13",
+    "express": "^4.21.1",
+    "mockjs": "^1.1.0"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.3",
+    "@types/node": "^24.0.10",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.6.3"
+  }
+}

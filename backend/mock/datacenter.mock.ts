@@ -1,5 +1,5 @@
 import type { Request, Response } from 'express';
-import { v4 as uuidv4 } from 'uuid';
+import { uuidv4 } from './utils';
 
 // Mock 数据存储
 let datacenters: IDC.Datacenter[] = [

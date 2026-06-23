@@ -8,6 +8,7 @@
     "experimentalDecorators": true,
     "strict": true,
     "forceConsistentCasingInFileNames": true,
+    "types": ["jest", "node"],
     "noImplicitReturns": true,
     "noUnusedLocals": false,
     "noUnusedParameters": false,
