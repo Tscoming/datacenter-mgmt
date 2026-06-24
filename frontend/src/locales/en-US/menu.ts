@@ -51,6 +51,7 @@ export default {
   'menu.editor.mind': 'Mind Editor',
   'menu.editor.koni': 'Koni Editor',
   'menu.datacenter3d': '3D Data Center',
+  'menu.digital-twin-screen': 'Digital Twin Screen',
   'menu.resource-tree': 'Resource Tree',
   'menu.layout': 'Datacenter Layout',
   'menu.cabinet3d': 'Cabinet 3D',

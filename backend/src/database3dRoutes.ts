@@ -2239,6 +2239,61 @@ const getDatacenterLayout = async (req: Request, schema: string, datacenterId: s
   );
 };
 
+const saveDatacenterLayout = async (req: Request, schema: string, datacenterId: string) => {
+  const schemaName = quoteIdentifier(schema);
+  const body = req.body || {};
+  const prev = await getDatacenterLayout(req, schema, datacenterId);
+  const updatedAt = new Date().toISOString();
+  const next = {
+    ...prev,
+    datacenterId,
+    version: toNumber(body.version ?? prev.version, 1) + 1,
+    canvasWidth: toNumber(body.canvasWidth ?? prev.canvasWidth, 60),
+    canvasHeight: toNumber(body.canvasHeight ?? prev.canvasHeight, 40),
+    pxPerMeter: toNumber(body.pxPerMeter ?? prev.pxPerMeter, 50),
+    cabinets: Array.isArray(body.cabinets) ? body.cabinets : prev.cabinets || [],
+    zones: Array.isArray(body.zones) ? body.zones : prev.zones || [],
+    facilities: Array.isArray(body.facilities) ? body.facilities : prev.facilities || [],
+    updatedAt,
+  };
+
+  await queryDatabase(
+    req,
+    '3d.layout.save',
+    `
+      insert into ${schemaName}.layout_snapshot (
+        datacenter_id,
+        version,
+        canvas_width,
+        canvas_height,
+        px_per_meter,
+        raw_json,
+        updated_at
+      )
+      values ($1, $2, $3, $4, $5, $6::jsonb, $7::timestamptz)
+      on conflict (datacenter_id) do update
+      set
+        version = excluded.version,
+        canvas_width = excluded.canvas_width,
+        canvas_height = excluded.canvas_height,
+        px_per_meter = excluded.px_per_meter,
+        raw_json = excluded.raw_json,
+        updated_at = excluded.updated_at
+    `,
+    [
+      datacenterId,
+      next.version,
+      next.canvasWidth,
+      next.canvasHeight,
+      next.pxPerMeter,
+      JSON.stringify(next),
+      updatedAt,
+    ],
+  );
+
+  return next;
+};
+
 const getSnapshotPayload = async <T>(req: Request, schema: string, snapshotType: string) => {
   const schemaName = quoteIdentifier(schema);
   const result = await queryDatabase<{ payload: T }>(
@@ -3451,6 +3506,11 @@ export default {
 
   'GET /api/idc/datacenters/:id/layout': (req: Request, res: Response) =>
     withSchema(req, res, '3d.layout', (schema) => getDatacenterLayout(req, schema, firstParam(req.params.id))),
+
+  'PUT /api/idc/datacenters/:id/layout': (req: Request, res: Response) =>
+    withSchema(req, res, '3d.layout.save', (schema) =>
+      saveDatacenterLayout(req, schema, firstParam(req.params.id)),
+    ),
 
   'GET /api/idc/environment/cabinets': (req: Request, res: Response) =>
     withSchema(req, res, '3d.cabinet_environment', (schema) => getCabinetEnvironments(req, schema)),

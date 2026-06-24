@@ -64,6 +64,9 @@ export const layout: RunTimeLayoutConfig = ({
   initialState,
   setInitialState,
 }) => {
+  const isDigitalTwinScreen =
+    history.location.pathname === '/digital-twin-screen';
+
   return {
     actionsRender: () => [
       <Question key="doc" />,
@@ -141,6 +144,13 @@ export const layout: RunTimeLayoutConfig = ({
       );
     },
     ...initialState?.settings,
+    ...(isDigitalTwinScreen
+      ? {
+          menuRender: false,
+          headerRender: false,
+          footerRender: false,
+        }
+      : {}),
   };
 };
 

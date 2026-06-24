@@ -35,6 +35,12 @@ export default [
     component: './Datacenter3D',
   },
   {
+    path: '/digital-twin-screen',
+    name: 'digital-twin-screen',
+    icon: 'fundProjectionScreen',
+    component: './DigitalTwinScreen',
+  },
+  {
     path: '/resource-tree',
     name: 'resource-tree',
     icon: 'apartment',

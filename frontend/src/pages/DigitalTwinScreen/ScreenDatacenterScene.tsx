@@ -1,0 +1,406 @@
+import {
+  Billboard,
+  Html,
+  OrbitControls,
+  PerspectiveCamera,
+  Text,
+} from '@react-three/drei';
+import { useFrame } from '@react-three/fiber';
+import { useMemo, useRef, useState } from 'react';
+import * as THREE from 'three';
+
+interface ScreenDatacenterSceneProps {
+  layout: IDC.DatacenterLayout;
+  cabinets: IDC.Cabinet[];
+  devices: IDC.Device[];
+  cabinetEnvironments: IDC.CabinetEnvironment[];
+}
+
+const statusColor: Record<string, string> = {
+  normal: '#00f0ff',
+  warning: '#ffb000',
+  error: '#ff3d71',
+  offline: '#64748b',
+  critical: '#ff3d71',
+};
+
+const statusText: Record<string, string> = {
+  normal: '正常',
+  warning: '告警',
+  error: '故障',
+  offline: '离线',
+  critical: '严重',
+};
+
+const CabinetGlow: React.FC<{ color: string; width: number; height: number; depth: number }> = ({
+  color,
+  width,
+  height,
+  depth,
+}) => (
+  <lineSegments>
+    <edgesGeometry args={[new THREE.BoxGeometry(width + 0.035, height + 0.035, depth + 0.035)]} />
+    <lineBasicMaterial color={color} transparent opacity={0.85} />
+  </lineSegments>
+);
+
+const StatusLight: React.FC<{ color: string; alerting: boolean; position: [number, number, number] }> = ({
+  color,
+  alerting,
+  position,
+}) => {
+  const materialRef = useRef<THREE.MeshStandardMaterial>(null);
+
+  useFrame(({ clock }) => {
+    if (!materialRef.current) return;
+    const pulse = alerting ? Math.sin(clock.elapsedTime * 5) * 0.7 + 1.2 : 0.9;
+    materialRef.current.emissiveIntensity = pulse;
+  });
+
+  return (
+    <mesh position={position}>
+      <sphereGeometry args={[0.035, 18, 18]} />
+      <meshStandardMaterial
+        ref={materialRef}
+        color={color}
+        emissive={color}
+        emissiveIntensity={1}
+        toneMapped={false}
+      />
+    </mesh>
+  );
+};
+
+const ScreenCabinet3D: React.FC<{
+  cabinet: IDC.Cabinet;
+  devices: IDC.Device[];
+  environment?: IDC.CabinetEnvironment;
+  position: [number, number, number];
+  rotationY: number;
+  hovered: boolean;
+  selected: boolean;
+  onHover: (cabinetId: string | null) => void;
+  onSelect: (cabinetId: string) => void;
+}> = ({
+  cabinet,
+  devices,
+  environment,
+  position,
+  rotationY,
+  hovered,
+  selected,
+  onHover,
+  onSelect,
+}) => {
+  const height = 2.72;
+  const width = 0.74;
+  const depth = 1.08;
+  const activeStatus = environment?.status === 'critical' ? 'error' : cabinet.status;
+  const color = statusColor[activeStatus] || statusColor.normal;
+  const usage = Math.round((cabinet.usedU / cabinet.uHeight) * 100);
+  const powerKw = cabinet.currentPower / 1000;
+  const slotPanelHeight = height - 0.28;
+  const slotHeight = slotPanelHeight / cabinet.uHeight;
+
+  const sortedDevices = useMemo(
+    () => [...devices].sort((left, right) => left.startU - right.startU),
+    [devices],
+  );
+  const slotRows = useMemo(
+    () =>
+      Array.from({ length: cabinet.uHeight }, (_, index) => {
+        const u = cabinet.uHeight - index;
+        const device = sortedDevices.find(
+          (item) => u >= item.startU && u <= item.endU,
+        );
+        return {
+          u,
+          device,
+          isDeviceStart: Boolean(device && device.startU === u),
+        };
+      }),
+    [cabinet.uHeight, sortedDevices],
+  );
+
+  return (
+    <group
+      position={position}
+      rotation={[0, rotationY, 0]}
+      onPointerOver={(event) => {
+        event.stopPropagation();
+        onHover(cabinet.id);
+      }}
+      onPointerOut={(event) => {
+        event.stopPropagation();
+        onHover(null);
+      }}
+      onClick={(event) => {
+        event.stopPropagation();
+        onSelect(cabinet.id);
+      }}
+    >
+      <mesh castShadow receiveShadow>
+        <boxGeometry args={[width, height, depth]} />
+        <meshStandardMaterial
+          color={hovered || selected ? '#0d8b9a' : '#063c47'}
+          emissive={hovered || selected ? '#00d8ff' : '#003a44'}
+          emissiveIntensity={selected ? 0.42 : hovered ? 0.32 : 0.12}
+          metalness={0.65}
+          roughness={0.38}
+        />
+      </mesh>
+
+      <mesh position={[0, 0, depth / 2 + 0.018]}>
+        <boxGeometry args={[width - 0.09, height - 0.14, 0.035]} />
+        <meshPhysicalMaterial
+          color="#8aefff"
+          transparent
+          opacity={0.26}
+          metalness={0.2}
+          roughness={0.08}
+          transmission={0.2}
+          emissive="#00c8df"
+          emissiveIntensity={0.08}
+        />
+      </mesh>
+
+      <CabinetGlow color={color} width={width} height={height} depth={depth} />
+
+      <group position={[0, 0, depth / 2 + 0.05]}>
+        {slotRows.map(({ u, device, isDeviceStart }, index) => {
+          const occupied = Boolean(device);
+          const y = height / 2 - 0.14 - (index + 0.5) * slotHeight;
+          const deviceColor =
+            device?.status === 'warning'
+              ? '#ffb000'
+              : device?.status === 'offline'
+                ? '#3b4b5f'
+                : device?.status === 'error'
+                  ? '#ff3d71'
+                  : '#8bdde8';
+          const slotColor = occupied
+            ? index % 2 === 0
+              ? '#6d9eaa'
+              : '#5f8f9d'
+            : '#071b27';
+          const emissiveColor = occupied ? '#0b6b78' : '#00131c';
+          const slotWidth = occupied ? width - 0.16 : width - 0.22;
+        return (
+          <group key={`${cabinet.id}-u-${u}`} position={[0, y, 0]}>
+            <mesh>
+              <boxGeometry
+                args={[
+                  slotWidth,
+                  occupied ? slotHeight * 0.88 : slotHeight * 0.52,
+                  occupied ? 0.06 : 0.028,
+                ]}
+              />
+              <meshStandardMaterial
+                color={slotColor}
+                emissive={emissiveColor}
+                emissiveIntensity={occupied ? 0.1 : 0.03}
+                metalness={occupied ? 0.35 : 0.12}
+                roughness={occupied ? 0.48 : 0.82}
+              />
+            </mesh>
+
+            {occupied && (
+              <>
+                <mesh position={[width * 0.31, 0, 0.038]}>
+                  <boxGeometry
+                    args={[0.075, Math.max(0.01, slotHeight * 0.28), 0.012]}
+                  />
+                  <meshStandardMaterial
+                    color={deviceColor}
+                    emissive={deviceColor}
+                    emissiveIntensity={0.75}
+                  />
+                </mesh>
+                <mesh position={[-width * 0.32, 0, 0.04]}>
+                  <sphereGeometry args={[0.01, 10, 10]} />
+                  <meshStandardMaterial
+                    color={deviceColor}
+                    emissive={deviceColor}
+                    emissiveIntensity={1.1}
+                  />
+                </mesh>
+                {isDeviceStart && (
+                  <mesh position={[0, slotHeight * 0.24, 0.039]}>
+                    <boxGeometry args={[width - 0.24, 0.006, 0.01]} />
+                    <meshStandardMaterial
+                      color="#c9fbff"
+                      emissive="#00eaff"
+                      emissiveIntensity={0.35}
+                    />
+                  </mesh>
+                )}
+              </>
+            )}
+
+            {!occupied && (
+              <mesh position={[0, 0, 0.018]}>
+                <boxGeometry args={[width - 0.28, 0.004, 0.006]} />
+                <meshStandardMaterial
+                  color="#123040"
+                  emissive="#00eaff"
+                  emissiveIntensity={0.04}
+                />
+              </mesh>
+            )}
+          </group>
+        );
+        })}
+      </group>
+
+      <StatusLight
+        color={color}
+        alerting={activeStatus === 'warning' || activeStatus === 'error'}
+        position={[width / 2 - 0.08, height / 2 + 0.035, depth / 2 + 0.02]}
+      />
+
+      <Billboard position={[0, height / 2 + 0.35, depth / 2 - 0.04]}>
+        <mesh>
+          <boxGeometry args={[1.05, 0.28, 0.035]} />
+          <meshStandardMaterial
+            color="#062936"
+            emissive={color}
+            emissiveIntensity={0.22}
+            transparent
+            opacity={0.75}
+          />
+        </mesh>
+        <Text
+          position={[0, 0.005, 0.03]}
+          fontSize={0.15}
+          color={color}
+          anchorX="center"
+          anchorY="middle"
+          outlineWidth={0.005}
+          outlineColor="#00151d"
+        >
+          {cabinet.code || cabinet.name}
+        </Text>
+      </Billboard>
+
+      {selected && (
+        <Billboard position={[0.75, 0.65, depth / 2 + 0.18]}>
+          <Html transform distanceFactor={4.6} zIndexRange={[80, 0]}>
+            <div
+              style={{
+                minWidth: 164,
+                padding: '14px 16px',
+                color: '#dffaff',
+                background: 'rgba(1, 15, 24, 0.92)',
+                border: '1px solid rgba(0, 240, 255, 0.55)',
+                borderRadius: 8,
+                boxShadow: '0 0 22px rgba(0, 240, 255, 0.25)',
+                fontSize: 12,
+                lineHeight: 1.7,
+                pointerEvents: 'none',
+              }}
+            >
+              <div style={{ color, fontSize: 16, fontWeight: 700, marginBottom: 4 }}>机柜 {cabinet.code}</div>
+              <div>
+                状态: <span style={{ color }}>{statusText[activeStatus] || activeStatus}</span>
+              </div>
+              <div>CPU: {Math.min(98, usage + 8)}%</div>
+              <div>温度: {environment?.avgTemperature ?? 0}℃</div>
+              <div>设备: {devices.length}台</div>
+              <div>功耗: {powerKw.toFixed(1)} kW</div>
+            </div>
+          </Html>
+        </Billboard>
+      )}
+    </group>
+  );
+};
+
+export const ScreenDatacenterScene: React.FC<ScreenDatacenterSceneProps> = ({
+  layout,
+  cabinets,
+  devices,
+  cabinetEnvironments,
+}) => {
+  const [hoveredCabinetId, setHoveredCabinetId] = useState<string | null>(null);
+  const [selectedCabinetId, setSelectedCabinetId] = useState<string | null>(null);
+
+  const layoutByCabinetId = useMemo(
+    () => new Map(layout.cabinets.map((item) => [item.cabinetId, item] as const)),
+    [layout.cabinets],
+  );
+  const devicesByCabinetId = useMemo(() => {
+    const map = new Map<string, IDC.Device[]>();
+    for (const device of devices) {
+      const items = map.get(device.cabinetId) || [];
+      items.push(device);
+      map.set(device.cabinetId, items);
+    }
+    return map;
+  }, [devices]);
+  const envByCabinetId = useMemo(
+    () => new Map(cabinetEnvironments.map((item) => [item.cabinetId, item] as const)),
+    [cabinetEnvironments],
+  );
+
+  return (
+    <>
+      <color attach="background" args={['#06111e']} />
+      <fog attach="fog" args={['#06111e', 6, 16]} />
+      <PerspectiveCamera makeDefault position={[4.8, 3.2, 6.6]} fov={42} />
+      <ambientLight intensity={0.34} color="#75f7ff" />
+      <directionalLight position={[4, 6, 4]} intensity={1.55} color="#e7fcff" castShadow />
+      <pointLight position={[-4, 2.4, 1.4]} intensity={2.2} color="#00e5ff" distance={7} />
+      <pointLight position={[3.4, 2.1, -2]} intensity={1.35} color="#9af6ff" distance={7} />
+      <spotLight position={[0, 5, 4]} angle={0.5} penumbra={0.7} intensity={1.4} color="#b9fbff" />
+
+      <mesh
+        rotation={[-Math.PI / 2, 0, 0]}
+        position={[0, -0.025, 1.05]}
+        receiveShadow
+        onClick={() => setSelectedCabinetId(null)}
+      >
+        <planeGeometry args={[15, 11]} />
+        <meshStandardMaterial
+          color="#0b2634"
+          metalness={0.36}
+          roughness={0.5}
+          emissive="#021923"
+          emissiveIntensity={0.32}
+        />
+      </mesh>
+
+      <gridHelper args={[15, 30, '#0fe7ff', '#16435a']} position={[0, -0.018, 1.05]} />
+
+      {cabinets.map((cabinet) => {
+        const layoutItem = layoutByCabinetId.get(cabinet.id);
+        const x = layoutItem ? layoutItem.x : (cabinet.column - 1) * 1.2;
+        const z = layoutItem ? layoutItem.y : (cabinet.row - 1) * 1.6;
+        const rotationY = (((layoutItem?.rotation || 0) * Math.PI) / 180);
+        return (
+          <ScreenCabinet3D
+            key={cabinet.id}
+            cabinet={cabinet}
+            devices={devicesByCabinetId.get(cabinet.id) || []}
+            environment={envByCabinetId.get(cabinet.id)}
+            position={[x, 1.36, z]}
+            rotationY={rotationY}
+            hovered={hoveredCabinetId === cabinet.id}
+            selected={selectedCabinetId === cabinet.id}
+            onHover={setHoveredCabinetId}
+            onSelect={setSelectedCabinetId}
+          />
+        );
+      })}
+
+      <OrbitControls
+        enableDamping
+        dampingFactor={0.06}
+        minDistance={4}
+        maxDistance={12}
+        minPolarAngle={Math.PI / 5}
+        maxPolarAngle={Math.PI / 2.25}
+        target={[0, 1.15, 1.2]}
+      />
+    </>
+  );
+};
