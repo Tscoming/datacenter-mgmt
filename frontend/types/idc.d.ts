@@ -260,6 +260,7 @@ declare namespace IDC {
     y: number;
     height?: number;
     rotation?: number;
+    pitch?: number;
   }
 
   interface DatacenterLayout {

@@ -238,9 +238,16 @@ function canvasRotationToSceneYaw(rotation = 0) {
   return Math.PI - angle;
 }
 
-function cameraForwardFromCanvasRotation(rotation = 0) {
-  const yaw = canvasRotationToSceneYaw(rotation);
-  return new THREE.Vector3(Math.sin(yaw), 0, Math.cos(yaw)).normalize();
+function cameraDirectionFromFacility(facility: IDC.DatacenterLayoutFacilityItem) {
+  const yaw = canvasRotationToSceneYaw(facility.rotation || 0);
+  const pitch = THREE.MathUtils.degToRad(
+    Math.max(-90, Math.min(90, facility.pitch ?? 0)),
+  );
+  return new THREE.Vector3(
+    Math.sin(yaw) * Math.cos(pitch),
+    Math.sin(pitch),
+    Math.cos(yaw) * Math.cos(pitch),
+  ).normalize();
 }
 
 const CameraFrustumModel: React.FC<{ color: string }> = ({ color }) => {
@@ -315,6 +322,9 @@ const ScreenFacility3D: React.FC<{
   const meta = facilityMeta(facility.type);
   const facilityRotationY = canvasRotationToSceneYaw(facility.rotation || 0);
   const cameraHeight = facility.type === 'camera' ? Math.max(0.4, facility.height ?? 2.5) : 0.88;
+  const cameraPitch = THREE.MathUtils.degToRad(
+    Math.max(-90, Math.min(90, facility.pitch ?? 0)),
+  );
 
   useFrame(({ clock }) => {
     if (!lightRef.current) return;
@@ -347,27 +357,39 @@ const ScreenFacility3D: React.FC<{
             <cylinderGeometry args={[0.025, 0.025, Math.max(0.3, cameraHeight - 0.16), 12]} />
             <meshStandardMaterial color="#557283" metalness={0.45} roughness={0.38} />
           </mesh>
-          <mesh position={[0, cameraHeight, 0.02]}>
-            <boxGeometry args={[0.32, 0.2, 0.18]} />
+          <mesh position={[0, cameraHeight - 0.12, 0]}>
+            <sphereGeometry args={[0.095, 18, 18]} />
             <meshStandardMaterial
-              color="#12394a"
+              color="#34515f"
               emissive={meta.color}
-              emissiveIntensity={0.25}
+              emissiveIntensity={0.12}
               metalness={0.35}
-              roughness={0.32}
+              roughness={0.4}
             />
           </mesh>
-          <mesh position={[0, cameraHeight, 0.15]}>
-            <cylinderGeometry args={[0.07, 0.07, 0.08, 20]} />
-            <meshStandardMaterial
-              ref={lightRef}
-              color={meta.color}
-              emissive={meta.color}
-              toneMapped={false}
-            />
-          </mesh>
-          <group position={[0, cameraHeight, 0.22]}>
-            <CameraFrustumModel color={meta.color} />
+          <group position={[0, cameraHeight, 0.02]} rotation={[-cameraPitch, 0, 0]}>
+            <mesh>
+              <boxGeometry args={[0.32, 0.2, 0.18]} />
+              <meshStandardMaterial
+                color="#12394a"
+                emissive={meta.color}
+                emissiveIntensity={0.25}
+                metalness={0.35}
+                roughness={0.32}
+              />
+            </mesh>
+            <mesh position={[0, 0, 0.13]}>
+              <cylinderGeometry args={[0.07, 0.07, 0.08, 20]} />
+              <meshStandardMaterial
+                ref={lightRef}
+                color={meta.color}
+                emissive={meta.color}
+                toneMapped={false}
+              />
+            </mesh>
+            <group position={[0, 0, 0.2]}>
+              <CameraFrustumModel color={meta.color} />
+            </group>
           </group>
         </group>
       )}
@@ -867,7 +889,7 @@ export const ScreenDatacenterScene: React.FC<ScreenDatacenterSceneProps> = ({
     if (!activeCameraFacility) return sceneView;
 
     const cameraHeight = Math.max(0.4, activeCameraFacility.height ?? 2.5);
-    const forward = cameraForwardFromCanvasRotation(activeCameraFacility.rotation || 0);
+    const forward = cameraDirectionFromFacility(activeCameraFacility);
     const cameraPosition = new THREE.Vector3(
       activeCameraFacility.x,
       cameraHeight + 0.08,

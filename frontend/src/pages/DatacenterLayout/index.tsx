@@ -676,6 +676,7 @@ const DatacenterLayoutPage: React.FC = () => {
             y: snapEnabled ? snap(pos.y, gridStep) : pos.y,
             height: tool === 'camera' ? 2.5 : undefined,
             rotation: 0,
+            pitch: tool === 'camera' ? 0 : undefined,
           };
           return { ...prev, facilities: [...prev.facilities, f] };
         });
@@ -3278,24 +3279,44 @@ const DatacenterLayoutPage: React.FC = () => {
                   />
                 </Form.Item>
                 {selectedFacility?.type === 'camera' && (
-                  <Form.Item label="安装高度(m)">
-                    <InputNumber
-                      value={selectedFacility.height ?? 2.5}
-                      min={0}
-                      max={20}
-                      step={0.1}
-                      precision={1}
-                      onChange={(v) => {
-                        if (!selectedFacility) return;
-                        const before = layoutRef.current;
-                        if (before) pushHistory(before);
-                        setFacilityItem(selectedFacility.id, {
-                          height: Number(v ?? 2.5),
-                        });
-                      }}
-                      style={{ width: '100%' }}
-                    />
-                  </Form.Item>
+                  <>
+                    <Form.Item label="安装高度(m)">
+                      <InputNumber
+                        value={selectedFacility.height ?? 2.5}
+                        min={0}
+                        max={20}
+                        step={0.1}
+                        precision={1}
+                        onChange={(v) => {
+                          if (!selectedFacility) return;
+                          const before = layoutRef.current;
+                          if (before) pushHistory(before);
+                          setFacilityItem(selectedFacility.id, {
+                            height: Number(v ?? 2.5),
+                          });
+                        }}
+                        style={{ width: '100%' }}
+                      />
+                    </Form.Item>
+                    <Form.Item label="俯仰角(°，正仰负俯)">
+                      <InputNumber
+                        value={selectedFacility.pitch ?? 0}
+                        min={-90}
+                        max={90}
+                        step={5}
+                        precision={0}
+                        onChange={(v) => {
+                          if (!selectedFacility) return;
+                          const before = layoutRef.current;
+                          if (before) pushHistory(before);
+                          setFacilityItem(selectedFacility.id, {
+                            pitch: Number(v ?? 0),
+                          });
+                        }}
+                        style={{ width: '100%' }}
+                      />
+                    </Form.Item>
+                  </>
                 )}
                 <Form.Item label="旋转(°)">
                   <InputNumber

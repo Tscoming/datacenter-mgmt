@@ -143,8 +143,26 @@ const layout: IDC.DatacenterLayout = {
     },
   ],
   facilities: [
-    { id: 'facility-camera-north', type: 'camera', name: '摄像头-北侧通道', x: 8, y: 4, height: 2.5, rotation: 45 },
-    { id: 'facility-camera-south', type: 'camera', name: '摄像头-南侧通道', x: 52, y: 36, height: 2.5, rotation: 225 },
+    {
+      id: 'facility-camera-north',
+      type: 'camera',
+      name: '摄像头-北侧通道',
+      x: 8,
+      y: 4,
+      height: 2.5,
+      rotation: 45,
+      pitch: -18,
+    },
+    {
+      id: 'facility-camera-south',
+      type: 'camera',
+      name: '摄像头-南侧通道',
+      x: 52,
+      y: 36,
+      height: 2.5,
+      rotation: 225,
+      pitch: -24,
+    },
     {
       id: 'facility-extinguisher-west',
       type: 'fire_extinguisher',
