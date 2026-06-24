@@ -1,7 +1,8 @@
 .screen {
-  position: relative;
-  min-height: 100vh;
-  margin: -24px;
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
   overflow: hidden;
   color: #d9fbff;
   background:
@@ -11,9 +12,11 @@
 }
 
 .loading {
+  position: fixed;
+  inset: 0;
   display: grid;
-  min-height: 100vh;
-  margin: -24px;
+  width: 100vw;
+  height: 100vh;
   place-items: center;
   color: #00eaff;
   background: #05111f;
