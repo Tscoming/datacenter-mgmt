@@ -674,6 +674,7 @@ const DatacenterLayoutPage: React.FC = () => {
             name: tool,
             x: snapEnabled ? snap(pos.x, gridStep) : pos.x,
             y: snapEnabled ? snap(pos.y, gridStep) : pos.y,
+            height: tool === 'camera' ? 2.5 : undefined,
             rotation: 0,
           };
           return { ...prev, facilities: [...prev.facilities, f] };
@@ -3276,6 +3277,26 @@ const DatacenterLayoutPage: React.FC = () => {
                     style={{ width: '100%' }}
                   />
                 </Form.Item>
+                {selectedFacility?.type === 'camera' && (
+                  <Form.Item label="安装高度(m)">
+                    <InputNumber
+                      value={selectedFacility.height ?? 2.5}
+                      min={0}
+                      max={20}
+                      step={0.1}
+                      precision={1}
+                      onChange={(v) => {
+                        if (!selectedFacility) return;
+                        const before = layoutRef.current;
+                        if (before) pushHistory(before);
+                        setFacilityItem(selectedFacility.id, {
+                          height: Number(v ?? 2.5),
+                        });
+                      }}
+                      style={{ width: '100%' }}
+                    />
+                  </Form.Item>
+                )}
                 <Form.Item label="旋转(°)">
                   <InputNumber
                     value={selectedFacility?.rotation || 0}

@@ -142,7 +142,28 @@ const layout: IDC.DatacenterLayout = {
       color: 'rgba(255, 61, 113, 0.2)',
     },
   ],
-  facilities: [],
+  facilities: [
+    { id: 'facility-camera-north', type: 'camera', name: '摄像头-北侧通道', x: 8, y: 4, height: 2.5, rotation: 45 },
+    { id: 'facility-camera-south', type: 'camera', name: '摄像头-南侧通道', x: 52, y: 36, height: 2.5, rotation: 225 },
+    {
+      id: 'facility-extinguisher-west',
+      type: 'fire_extinguisher',
+      name: '灭火器-西侧立柱',
+      x: 6,
+      y: 20,
+      rotation: 0,
+    },
+    {
+      id: 'facility-extinguisher-east',
+      type: 'fire_extinguisher',
+      name: '灭火器-东侧立柱',
+      x: 54,
+      y: 20,
+      rotation: 0,
+    },
+    { id: 'facility-access-main', type: 'door', name: '门禁-主入口', x: 30, y: 1.2, rotation: 0 },
+    { id: 'facility-temp-sensor-a', type: 'sensor', name: '温湿度传感器-A区', x: 18, y: 16, rotation: 0 },
+  ],
   updatedAt: now.toISOString(),
 };
 

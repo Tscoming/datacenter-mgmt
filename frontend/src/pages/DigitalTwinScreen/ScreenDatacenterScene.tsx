@@ -212,6 +212,273 @@ const AisleAirflow: React.FC<{ zone: IDC.DatacenterLayoutZoneItem }> = ({ zone }
   );
 };
 
+function facilityMeta(type: IDC.LayoutFacilityType) {
+  switch (type) {
+    case 'camera':
+      return { color: '#8aefff', label: '摄像头' };
+    case 'fire_extinguisher':
+      return { color: '#ff3d71', label: '灭火器' };
+    case 'door':
+      return { color: '#ffb000', label: '门禁' };
+    case 'sensor':
+      return { color: '#16f19a', label: '传感器' };
+    case 'crac':
+      return { color: '#66d9ff', label: '空调' };
+    case 'ups':
+      return { color: '#f7d154', label: 'UPS' };
+    case 'pdu':
+      return { color: '#c58cff', label: 'PDU' };
+    default:
+      return { color: '#c9fbff', label: '设施' };
+  }
+}
+
+function canvasRotationToSceneYaw(rotation = 0) {
+  const angle = (rotation * Math.PI) / 180;
+  return Math.PI - angle;
+}
+
+const CameraFrustumModel: React.FC<{ color: string }> = ({ color }) => {
+  const geometry = useMemo(() => {
+    const nearZ = 0.3;
+    const farZ = 1.15;
+    const nearWidth = 0.22;
+    const nearHeight = 0.14;
+    const farWidth = 0.82;
+    const farHeight = 0.52;
+    const origin = new THREE.Vector3(0, 0, 0);
+    const near = [
+      new THREE.Vector3(-nearWidth / 2, nearHeight / 2, nearZ),
+      new THREE.Vector3(nearWidth / 2, nearHeight / 2, nearZ),
+      new THREE.Vector3(nearWidth / 2, -nearHeight / 2, nearZ),
+      new THREE.Vector3(-nearWidth / 2, -nearHeight / 2, nearZ),
+    ];
+    const far = [
+      new THREE.Vector3(-farWidth / 2, farHeight / 2, farZ),
+      new THREE.Vector3(farWidth / 2, farHeight / 2, farZ),
+      new THREE.Vector3(farWidth / 2, -farHeight / 2, farZ),
+      new THREE.Vector3(-farWidth / 2, -farHeight / 2, farZ),
+    ];
+    const segments = [
+      origin, far[0], origin, far[1], origin, far[2], origin, far[3],
+      near[0], near[1], near[1], near[2], near[2], near[3], near[3], near[0],
+      far[0], far[1], far[1], far[2], far[2], far[3], far[3], far[0],
+      near[0], far[0], near[1], far[1], near[2], far[2], near[3], far[3],
+      origin, new THREE.Vector3(0, 0, farZ),
+    ];
+
+    return new THREE.BufferGeometry().setFromPoints(segments);
+  }, []);
+
+  return (
+    <>
+      <lineSegments geometry={geometry}>
+        <lineBasicMaterial
+          color={color}
+          transparent
+          opacity={0.9}
+          blending={THREE.AdditiveBlending}
+          depthWrite={false}
+          toneMapped={false}
+        />
+      </lineSegments>
+      <mesh position={[0, 0, 0.74]}>
+        <boxGeometry args={[0.58, 0.36, 0.02]} />
+        <meshBasicMaterial
+          color={color}
+          transparent
+          opacity={0.08}
+          blending={THREE.AdditiveBlending}
+          depthWrite={false}
+          toneMapped={false}
+        />
+      </mesh>
+    </>
+  );
+};
+
+const ScreenFacility3D: React.FC<{ facility: IDC.DatacenterLayoutFacilityItem }> = ({
+  facility,
+}) => {
+  const lightRef = useRef<THREE.MeshStandardMaterial>(null);
+  const meta = facilityMeta(facility.type);
+  const facilityRotationY = canvasRotationToSceneYaw(facility.rotation || 0);
+  const cameraHeight = facility.type === 'camera' ? Math.max(0.4, facility.height ?? 2.5) : 0.88;
+
+  useFrame(({ clock }) => {
+    if (!lightRef.current) return;
+    lightRef.current.emissiveIntensity = 0.8 + Math.sin(clock.elapsedTime * 3.2) * 0.22;
+  });
+
+  return (
+    <group position={[facility.x, 0.08, facility.y]}>
+      <mesh position={[0, -0.035, 0]} receiveShadow>
+        <cylinderGeometry args={[0.22, 0.22, 0.025, 32]} />
+        <meshStandardMaterial
+          color="#082536"
+          emissive={meta.color}
+          emissiveIntensity={0.18}
+          transparent
+          opacity={0.9}
+        />
+      </mesh>
+
+      {facility.type === 'camera' && (
+        <group rotation={[0, facilityRotationY, 0]}>
+          <mesh position={[0, cameraHeight / 2, 0]}>
+            <cylinderGeometry args={[0.025, 0.025, Math.max(0.3, cameraHeight - 0.16), 12]} />
+            <meshStandardMaterial color="#557283" metalness={0.45} roughness={0.38} />
+          </mesh>
+          <mesh position={[0, cameraHeight, 0.02]}>
+            <boxGeometry args={[0.32, 0.2, 0.18]} />
+            <meshStandardMaterial
+              color="#12394a"
+              emissive={meta.color}
+              emissiveIntensity={0.25}
+              metalness={0.35}
+              roughness={0.32}
+            />
+          </mesh>
+          <mesh position={[0, cameraHeight, 0.15]}>
+            <cylinderGeometry args={[0.07, 0.07, 0.08, 20]} />
+            <meshStandardMaterial
+              ref={lightRef}
+              color={meta.color}
+              emissive={meta.color}
+              toneMapped={false}
+            />
+          </mesh>
+          <group position={[0, cameraHeight, 0.22]}>
+            <CameraFrustumModel color={meta.color} />
+          </group>
+        </group>
+      )}
+
+      {facility.type === 'fire_extinguisher' && (
+        <group rotation={[0, facilityRotationY, 0]}>
+          <mesh position={[0, 0.28, 0]}>
+            <cylinderGeometry args={[0.09, 0.1, 0.48, 24]} />
+            <meshStandardMaterial
+              color="#9f1239"
+              emissive={meta.color}
+              emissiveIntensity={0.22}
+              metalness={0.18}
+              roughness={0.42}
+            />
+          </mesh>
+          <mesh position={[0, 0.55, 0]}>
+            <sphereGeometry args={[0.085, 18, 18]} />
+            <meshStandardMaterial color="#ef4444" emissive={meta.color} emissiveIntensity={0.18} />
+          </mesh>
+          <mesh position={[0, 0.63, 0]}>
+            <boxGeometry args={[0.18, 0.035, 0.035]} />
+            <meshStandardMaterial color="#f8fafc" metalness={0.4} roughness={0.3} />
+          </mesh>
+        </group>
+      )}
+
+      {facility.type === 'door' && (
+        <group rotation={[0, facilityRotationY, 0]}>
+          <mesh position={[0, 0.42, 0]}>
+            <boxGeometry args={[0.52, 0.78, 0.045]} />
+            <meshStandardMaterial
+              color="#2f2a1d"
+              emissive={meta.color}
+              emissiveIntensity={0.12}
+              metalness={0.2}
+              roughness={0.5}
+            />
+          </mesh>
+          <lineSegments position={[0, 0.42, 0.028]}>
+            <edgesGeometry args={[new THREE.BoxGeometry(0.56, 0.82, 0.055)]} />
+            <lineBasicMaterial color={meta.color} transparent opacity={0.95} />
+          </lineSegments>
+          <mesh position={[0.18, 0.43, 0.055]}>
+            <boxGeometry args={[0.08, 0.14, 0.028]} />
+            <meshStandardMaterial
+              ref={lightRef}
+              color={meta.color}
+              emissive={meta.color}
+              toneMapped={false}
+            />
+          </mesh>
+        </group>
+      )}
+
+      {facility.type === 'sensor' && (
+        <>
+          <mesh position={[0, 0.28, 0]}>
+            <cylinderGeometry args={[0.018, 0.018, 0.42, 12]} />
+            <meshStandardMaterial color="#42606d" metalness={0.35} roughness={0.4} />
+          </mesh>
+          <mesh position={[0, 0.55, 0]}>
+            <sphereGeometry args={[0.12, 24, 24]} />
+            <meshStandardMaterial
+              ref={lightRef}
+              color={meta.color}
+              emissive={meta.color}
+              transparent
+              opacity={0.88}
+              toneMapped={false}
+            />
+          </mesh>
+          <mesh position={[0, 0.55, 0]}>
+            <sphereGeometry args={[0.28, 24, 24]} />
+            <meshBasicMaterial
+              color={meta.color}
+              transparent
+              opacity={0.09}
+              blending={THREE.AdditiveBlending}
+              depthWrite={false}
+              toneMapped={false}
+            />
+          </mesh>
+        </>
+      )}
+
+      {!['camera', 'fire_extinguisher', 'door', 'sensor'].includes(facility.type) && (
+        <group rotation={[0, facilityRotationY, 0]}>
+          <mesh position={[0, 0.28, 0]}>
+            <boxGeometry args={[0.38, 0.5, 0.32]} />
+            <meshStandardMaterial
+              color="#12394a"
+              emissive={meta.color}
+              emissiveIntensity={0.2}
+              metalness={0.35}
+              roughness={0.38}
+            />
+          </mesh>
+        </group>
+      )}
+
+      <Billboard position={[0, facility.type === 'camera' ? cameraHeight + 0.34 : 1.02, 0]}>
+        <mesh raycast={disableRaycast}>
+          <boxGeometry args={[0.9, 0.22, 0.028]} />
+          <meshStandardMaterial
+            color="#061d2a"
+            emissive={meta.color}
+            emissiveIntensity={0.22}
+            transparent
+            opacity={0.74}
+          />
+        </mesh>
+        <Text
+          raycast={disableRaycast}
+          position={[0, 0.004, 0.026]}
+          fontSize={0.105}
+          color={meta.color}
+          anchorX="center"
+          anchorY="middle"
+          outlineWidth={0.004}
+          outlineColor="#00151d"
+        >
+          {facility.name || meta.label}
+        </Text>
+      </Billboard>
+    </group>
+  );
+};
+
 const SyncedOrbitControls: React.FC<{
   cameraPosition: [number, number, number];
   target: [number, number, number];
@@ -702,6 +969,10 @@ export const ScreenDatacenterScene: React.FC<ScreenDatacenterSceneProps> = ({
           />
         );
       })}
+
+      {(layout.facilities || []).map((facility) => (
+        <ScreenFacility3D key={facility.id} facility={facility} />
+      ))}
 
       <SyncedOrbitControls
         cameraPosition={sceneView.cameraPosition}

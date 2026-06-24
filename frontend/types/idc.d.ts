@@ -258,6 +258,7 @@ declare namespace IDC {
     name?: string;
     x: number;
     y: number;
+    height?: number;
     rotation?: number;
   }
 
