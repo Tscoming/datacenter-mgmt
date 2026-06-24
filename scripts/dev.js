@@ -18,6 +18,7 @@ function start(name, args) {
     cwd: process.cwd(),
     stdio: 'inherit',
     detached: !isWindows,
+    shell: isWindows,
   });
 
   child.on('exit', (code, signal) => {
