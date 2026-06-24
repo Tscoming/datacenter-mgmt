@@ -29,6 +29,7 @@ import {
   Ruler,
   Save,
   ScanEye,
+  Settings2,
   Square,
   Thermometer,
   Undo2,
@@ -72,6 +73,10 @@ type SelectionState = {
 
 type DistributeMode = 'start' | 'center' | 'end';
 type DistributeAnchor = 'endpoints' | 'primary';
+type CanvasSettingsValues = Pick<
+  IDC.DatacenterLayout,
+  'canvasWidth' | 'canvasHeight' | 'pxPerMeter'
+>;
 
 function clamp(n: number, min: number, max: number) {
   return Math.max(min, Math.min(max, n));
@@ -218,6 +223,8 @@ const DatacenterLayoutPage: React.FC = () => {
   const [gridStep, setGridStep] = useState(0.1);
   const [importOpen, setImportOpen] = useState(false);
   const [importText, setImportText] = useState('');
+  const [canvasSettingsOpen, setCanvasSettingsOpen] = useState(false);
+  const [canvasForm] = Form.useForm<CanvasSettingsValues>();
   const [_historyTick, setHistoryTick] = useState(0);
   const [selectBox, setSelectBox] = useState<{
     left: number;
@@ -395,6 +402,7 @@ const DatacenterLayoutPage: React.FC = () => {
       transform: `translate(${offset.x}px, ${offset.y}px) scale(${scale})`,
       width: layout ? `${layout.canvasWidth * pxPerMeter}px` : '2000px',
       height: layout ? `${layout.canvasHeight * pxPerMeter}px` : '1400px',
+      backgroundSize: `${pxPerMeter}px ${pxPerMeter}px`,
       position: 'relative' as const,
     };
   }, [offset.x, offset.y, scale, layout, pxPerMeter]);
@@ -1460,6 +1468,45 @@ const DatacenterLayoutPage: React.FC = () => {
     message.success('已导入到当前布局（未保存）');
   }, [importText, pushHistory]);
 
+  const openCanvasSettings = useCallback(() => {
+    const cur = layoutRef.current;
+    if (!cur) return;
+    canvasForm.setFieldsValue({
+      canvasWidth: cur.canvasWidth,
+      canvasHeight: cur.canvasHeight,
+      pxPerMeter: cur.pxPerMeter,
+    });
+    setCanvasSettingsOpen(true);
+  }, [canvasForm]);
+
+  const saveCanvasSettings = useCallback(async () => {
+    const cur = layoutRef.current;
+    if (!selectedDc || !cur) return;
+    const values = await canvasForm.validateFields();
+    setSaving(true);
+    try {
+      const res = await saveDatacenterLayout(selectedDc, {
+        version: cur.version,
+        canvasWidth: Number(values.canvasWidth),
+        canvasHeight: Number(values.canvasHeight),
+        pxPerMeter: Number(values.pxPerMeter),
+        cabinets: cabinetItems,
+        zones: cur.zones,
+        facilities: cur.facilities,
+      });
+      if (res.success && res.data) {
+        pushHistory(cur);
+        setLayout(res.data);
+        setCanvasSettingsOpen(false);
+        message.success('画布设置已保存');
+      } else {
+        message.error('画布设置保存失败');
+      }
+    } finally {
+      setSaving(false);
+    }
+  }, [cabinetItems, canvasForm, pushHistory, selectedDc]);
+
   const copySelectionToClipboard = useCallback(() => {
     const cur = layoutRef.current;
     if (!cur) return;
@@ -2292,6 +2339,12 @@ const DatacenterLayoutPage: React.FC = () => {
                 <Button onClick={() => selectedDc && load(selectedDc)}>
                   刷新
                 </Button>
+                <Button
+                  icon={<Settings2 size={16} />}
+                  onClick={openCanvasSettings}
+                >
+                  画布设置
+                </Button>
                 <Button onClick={go3D}>打开3D</Button>
               </Space>
             </Space>
@@ -2642,6 +2695,12 @@ const DatacenterLayoutPage: React.FC = () => {
               style={viewportStyle}
               data-role="canvas"
             >
+              <div
+                className={styles.majorGrid}
+                style={{
+                  backgroundSize: `${pxPerMeter * 5}px ${pxPerMeter * 5}px`,
+                }}
+              />
               {layers.showZones &&
                 zones.map((z) => {
                   const left = z.x * pxPerMeter;
@@ -3237,6 +3296,59 @@ const DatacenterLayoutPage: React.FC = () => {
           </>
         )}
       </Drawer>
+
+      <Modal
+        title="画布设置"
+        open={canvasSettingsOpen}
+        okText="保存"
+        cancelText="取消"
+        onOk={saveCanvasSettings}
+        onCancel={() => setCanvasSettingsOpen(false)}
+        confirmLoading={saving}
+        destroyOnHidden
+      >
+        <Form form={canvasForm} layout="vertical">
+          <Form.Item
+            name="canvasWidth"
+            label="宽度(m)"
+            rules={[{ required: true, message: '请输入画布宽度' }]}
+          >
+            <InputNumber
+              min={1}
+              max={1000}
+              step={1}
+              precision={2}
+              style={{ width: '100%' }}
+            />
+          </Form.Item>
+          <Form.Item
+            name="canvasHeight"
+            label="高度(m)"
+            rules={[{ required: true, message: '请输入画布高度' }]}
+          >
+            <InputNumber
+              min={1}
+              max={1000}
+              step={1}
+              precision={2}
+              style={{ width: '100%' }}
+            />
+          </Form.Item>
+          <Form.Item
+            name="pxPerMeter"
+            label="比例(px/m)"
+            rules={[{ required: true, message: '请输入画布比例' }]}
+          >
+            <InputNumber
+              min={1}
+              max={500}
+              step={1}
+              precision={2}
+              style={{ width: '100%' }}
+            />
+          </Form.Item>
+        </Form>
+      </Modal>
 
       <Modal
         title="导入/导出布局 JSON"

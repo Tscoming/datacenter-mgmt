@@ -47,6 +47,9 @@ import {
   type SelectionBox,
 } from './SelectionTools';
 
+const CABINET_WIDTH = 0.6;
+const CABINET_DEPTH = 1.0;
+
 // 设备悬停Tooltip组件
 const _DeviceTooltip: React.FC<{ device: IDC.Device; visible: boolean }> = ({
   device,
@@ -153,8 +156,8 @@ export const Cabinet3D: React.FC<CabinetProps> = ({
 
   // 机柜尺寸（按U位缩放）
   const cabinetHeight = cabinet.uHeight * 0.0445; // 1U = 44.5mm
-  const cabinetWidth = 0.6;
-  const cabinetDepth = 1.0;
+  const cabinetWidth = CABINET_WIDTH;
+  const cabinetDepth = CABINET_DEPTH;
 
   // 状态颜色
   const statusColors: Record<string, string> = {
@@ -537,6 +540,21 @@ export const DatacenterScene = forwardRef<
     const [cameraTarget, setCameraTarget] = useState<
       [number, number, number] | null
     >(null);
+    const floorSize = useMemo(
+      () => ({
+        width: Math.max(1, layout?.canvasWidth || 60),
+        height: Math.max(1, layout?.canvasHeight || 40),
+      }),
+      [layout?.canvasHeight, layout?.canvasWidth],
+    );
+    const floorCenter = useMemo<[number, number, number]>(
+      () => [floorSize.width / 2, 0, floorSize.height / 2],
+      [floorSize.height, floorSize.width],
+    );
+    const overviewDistance = useMemo(
+      () => Math.max(8, Math.max(floorSize.width, floorSize.height) * 0.45),
+      [floorSize.height, floorSize.width],
+    );
 
     // 测量工具状态
     const [pendingMeasurementPoint, setPendingMeasurementPoint] =
@@ -582,9 +600,13 @@ export const DatacenterScene = forwardRef<
 
       cabinets.forEach((cab) => {
         const found = layout?.cabinets?.find((c) => c.cabinetId === cab.id);
-        const x = found ? found.x : (cab.column - 1) * colSpacing;
+        const x = found
+          ? found.x + CABINET_WIDTH / 2
+          : (cab.column - 1) * colSpacing + CABINET_WIDTH / 2;
         const y = (cab.uHeight * 0.0445) / 2;
-        const z = found ? found.y : (cab.row - 1) * rowSpacing;
+        const z = found
+          ? found.y + CABINET_DEPTH / 2
+          : (cab.row - 1) * rowSpacing + CABINET_DEPTH / 2;
         positions[cab.id] = [x, y, z];
       });
 
@@ -790,7 +812,7 @@ export const DatacenterScene = forwardRef<
         setCameraTarget(position);
       },
       resetCamera: () => {
-        setCameraTarget([4, 1, 4]);
+        setCameraTarget([floorCenter[0], 1, floorCenter[2]]);
       },
     }));
 
@@ -802,7 +824,15 @@ export const DatacenterScene = forwardRef<
           {/* <color attach="background" args={['#d0d8e0']} /> */}
 
           {/* 相机 */}
-          <PerspectiveCamera makeDefault position={[8, 6, 8]} fov={50} />
+          <PerspectiveCamera
+            makeDefault
+            position={[
+              floorCenter[0] + overviewDistance,
+              Math.max(6, overviewDistance * 0.7),
+              floorCenter[2] + overviewDistance,
+            ]}
+            fov={50}
+          />
 
           {/* 相机动画控制器 */}
           <CameraController
@@ -832,8 +862,9 @@ export const DatacenterScene = forwardRef<
           {/* 地板网格 */}
           <Grid
             renderOrder={-1}
-            position={[0, -0.01, 0]}
-            infiniteGrid
+            args={[floorSize.width, floorSize.height]}
+            position={[floorCenter[0], -0.01, floorCenter[2]]}
+            infiniteGrid={false}
             cellSize={1}
             sectionSize={5}
             fadeDistance={50}
@@ -845,16 +876,36 @@ export const DatacenterScene = forwardRef<
           {/* 地面 - 浅灰色 */}
           <mesh
             rotation={[-Math.PI / 2, 0, 0]}
-            position={[0, -0.02, 0]}
+            position={[floorCenter[0], -0.02, floorCenter[2]]}
             receiveShadow
           >
-            <planeGeometry args={[100, 100]} />
+            <planeGeometry args={[floorSize.width, floorSize.height]} />
             <meshStandardMaterial
               color="#f0f2f5"
               metalness={0.1}
               roughness={0.8}
             />
           </mesh>
+
+          {/* 画布边界，与 2D 布局编辑器的画布设置保持一致 */}
+          <group position={[0, 0.004, 0]}>
+            <mesh position={[floorSize.width / 2, 0, 0]}>
+              <boxGeometry args={[floorSize.width, 0.01, 0.04]} />
+              <meshStandardMaterial color="#1677ff" />
+            </mesh>
+            <mesh position={[floorSize.width / 2, 0, floorSize.height]}>
+              <boxGeometry args={[floorSize.width, 0.01, 0.04]} />
+              <meshStandardMaterial color="#1677ff" />
+            </mesh>
+            <mesh position={[0, 0, floorSize.height / 2]}>
+              <boxGeometry args={[0.04, 0.01, floorSize.height]} />
+              <meshStandardMaterial color="#1677ff" />
+            </mesh>
+            <mesh position={[floorSize.width, 0, floorSize.height / 2]}>
+              <boxGeometry args={[0.04, 0.01, floorSize.height]} />
+              <meshStandardMaterial color="#1677ff" />
+            </mesh>
+          </group>
 
           {(layout?.zones || []).map((z) => {
             const color =
@@ -928,7 +979,9 @@ export const DatacenterScene = forwardRef<
 
           {/* 交互工具 */}
           <KeyboardController
-            onResetView={() => setCameraTarget([4, 1, 4])}
+            onResetView={() =>
+              setCameraTarget([floorCenter[0], 1, floorCenter[2]])
+            }
             onEscape={() => {
               onSelectCabinet(null);
               onSelectDevice(null);
@@ -1049,8 +1102,9 @@ export const DatacenterScene = forwardRef<
             enableDamping
             dampingFactor={0.05}
             minDistance={2}
-            maxDistance={30}
+            maxDistance={Math.max(30, overviewDistance * 3)}
             maxPolarAngle={Math.PI / 2 - 0.1}
+            target={floorCenter}
           />
         </>
       </AnimationRegistryProvider>

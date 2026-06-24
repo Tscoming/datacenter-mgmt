@@ -309,13 +309,13 @@ const Datacenter3DPage: React.FC = () => {
         (c) => c.cabinetId === cabinet.id,
       );
       if (found) {
-        return { x: found.x, z: found.y };
+        return { x: found.x + 0.3, z: found.y + 0.5 };
       }
       const rowSpacing = 1.5;
       const colSpacing = 0.8;
       return {
-        x: (cabinet.column - 1) * colSpacing,
-        z: (cabinet.row - 1) * rowSpacing,
+        x: (cabinet.column - 1) * colSpacing + 0.3,
+        z: (cabinet.row - 1) * rowSpacing + 0.5,
       };
     },
     [datacenterLayout],
@@ -914,11 +914,10 @@ const Datacenter3DPage: React.FC = () => {
                       (c) => c.id === selectedDevice.cabinetId,
                     );
                     if (cabinet && sceneRef.current) {
-                      const rowSpacing = 1.5;
-                      const colSpacing = 0.8;
-                      const x = (cabinet.column - 1) * colSpacing;
+                      const base = cabinetBasePosition(cabinet);
+                      const x = base.x;
                       const y = selectedDevice.startU * 0.0445;
-                      const z = (cabinet.row - 1) * rowSpacing;
+                      const z = base.z;
                       sceneRef.current.focusOnPosition([x, y, z]);
                     }
                   }}

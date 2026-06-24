@@ -143,10 +143,7 @@
   height: 100%;
   overflow: hidden;
   border-radius: 8px;
-  background:
-    linear-gradient(#f3f5f7 1px, transparent 1px) 0 0 / 50px 50px,
-    linear-gradient(90deg, #f3f5f7 1px, transparent 1px) 0 0 / 50px 50px,
-    #ffffff;
+  background: #f5f7fa;
 }
 
 .selectBox {
@@ -196,6 +193,23 @@
   position: absolute;
   inset: 0;
   transform-origin: 0 0;
+  box-sizing: border-box;
+  border: 2px solid rgba(22, 119, 255, 0.65);
+  background-color: #ffffff;
+  background-image:
+    linear-gradient(#edf1f5 1px, transparent 1px),
+    linear-gradient(90deg, #edf1f5 1px, transparent 1px);
+  box-shadow: 0 0 0 1px rgba(22, 119, 255, 0.12);
+}
+
+.majorGrid {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background-image:
+    linear-gradient(rgba(58, 72, 92, 0.72) 2px, transparent 2px),
+    linear-gradient(90deg, rgba(58, 72, 92, 0.72) 2px, transparent 2px);
 }
 
 .cabinet {

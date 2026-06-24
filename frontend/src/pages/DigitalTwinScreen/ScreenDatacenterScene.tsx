@@ -1,5 +1,6 @@
 import {
   Billboard,
+  Grid,
   Html,
   OrbitControls,
   PerspectiveCamera,
@@ -33,6 +34,15 @@ const statusText: Record<string, string> = {
 };
 
 const disableRaycast = () => undefined;
+const CABINET_LAYOUT_WIDTH = 0.6;
+const CABINET_LAYOUT_DEPTH = 1.0;
+
+const zoneColor = (type: IDC.LayoutZoneType) => {
+  if (type === 'hot_aisle') return '#ff3d71';
+  if (type === 'cold_aisle') return '#00d9ff';
+  if (type === 'restricted') return '#ffb000';
+  return '#16f19a';
+};
 
 const CabinetGlow: React.FC<{ color: string; width: number; height: number; depth: number }> = ({
   color,
@@ -125,8 +135,8 @@ const ScreenCabinet3D: React.FC<{
   onSelect,
 }) => {
   const height = 2.72;
-  const width = 0.74;
-  const depth = 1.08;
+  const width = CABINET_LAYOUT_WIDTH;
+  const depth = CABINET_LAYOUT_DEPTH;
   const activeStatus = environment?.status === 'critical' ? 'error' : cabinet.status;
   const color = statusColor[activeStatus] || statusColor.normal;
   const usage = Math.round((cabinet.usedU / cabinet.uHeight) * 100);
@@ -356,6 +366,17 @@ export const ScreenDatacenterScene: React.FC<ScreenDatacenterSceneProps> = ({
 }) => {
   const [hoveredCabinetId, setHoveredCabinetId] = useState<string | null>(null);
   const [selectedCabinetId, setSelectedCabinetId] = useState<string | null>(null);
+  const floorSize = useMemo(
+    () => ({
+      width: Math.max(1, layout.canvasWidth || 60),
+      height: Math.max(1, layout.canvasHeight || 40),
+    }),
+    [layout.canvasHeight, layout.canvasWidth],
+  );
+  const floorCenter = useMemo<[number, number, number]>(
+    () => [floorSize.width / 2, 0, floorSize.height / 2],
+    [floorSize.height, floorSize.width],
+  );
 
   const layoutByCabinetId = useMemo(
     () => new Map(layout.cabinets.map((item) => [item.cabinetId, item] as const)),
@@ -375,45 +396,56 @@ export const ScreenDatacenterScene: React.FC<ScreenDatacenterSceneProps> = ({
     [cabinetEnvironments],
   );
   const sceneView = useMemo(() => {
+    const span = Math.max(floorSize.width, floorSize.height, 6);
+    const distance = Math.min(Math.max(span * 0.62, 12), 48);
+
     if (!cabinets.length) {
       return {
-        cameraPosition: [9, 9, 12] as [number, number, number],
-        target: [0, 1.15, 1.2] as [number, number, number],
-        maxDistance: 24,
+        cameraPosition: [
+          floorCenter[0] + distance * 0.68,
+          distance * 0.78,
+          floorCenter[2] + distance,
+        ] as [number, number, number],
+        target: [floorCenter[0], 1.1, floorCenter[2]] as [number, number, number],
+        maxDistance: distance * 1.8,
       };
     }
 
     const points = cabinets.map((cabinet) => {
       const layoutItem = layoutByCabinetId.get(cabinet.id);
       return {
-        x: layoutItem ? layoutItem.x : (cabinet.column - 1) * 1.2,
-        z: layoutItem ? layoutItem.y : (cabinet.row - 1) * 1.6,
+        x: layoutItem
+          ? layoutItem.x + CABINET_LAYOUT_WIDTH / 2
+          : (cabinet.column - 1) * 1.2 + CABINET_LAYOUT_WIDTH / 2,
+        z: layoutItem
+          ? layoutItem.y + CABINET_LAYOUT_DEPTH / 2
+          : (cabinet.row - 1) * 1.6 + CABINET_LAYOUT_DEPTH / 2,
       };
     });
-    const minX = Math.min(...points.map((item) => item.x));
-    const maxX = Math.max(...points.map((item) => item.x));
-    const minZ = Math.min(...points.map((item) => item.z));
-    const maxZ = Math.max(...points.map((item) => item.z));
+    const minX = Math.min(0, ...points.map((item) => item.x));
+    const maxX = Math.max(floorSize.width, ...points.map((item) => item.x));
+    const minZ = Math.min(0, ...points.map((item) => item.z));
+    const maxZ = Math.max(floorSize.height, ...points.map((item) => item.z));
     const centerX = (minX + maxX) / 2;
     const centerZ = (minZ + maxZ) / 2;
-    const span = Math.max(maxX - minX, maxZ - minZ, 6);
-    const distance = Math.min(Math.max(span * 1.85, 12), 32);
+    const viewSpan = Math.max(maxX - minX, maxZ - minZ, 6);
+    const viewDistance = Math.min(Math.max(viewSpan * 0.62, 12), 48);
 
     return {
       cameraPosition: [
-        centerX + distance * 0.68,
-        distance * 0.78,
-        centerZ + distance,
+        centerX + viewDistance * 0.68,
+        viewDistance * 0.78,
+        centerZ + viewDistance,
       ] as [number, number, number],
       target: [centerX, 1.1, centerZ] as [number, number, number],
-      maxDistance: distance * 1.8,
+      maxDistance: viewDistance * 1.8,
     };
-  }, [cabinets, layoutByCabinetId]);
+  }, [cabinets, floorCenter, floorSize, layoutByCabinetId]);
 
   return (
     <>
       <color attach="background" args={['#0b1e2e']} />
-      <fog attach="fog" args={['#0b1e2e', 10, 26]} />
+      <fog attach="fog" args={['#0b1e2e', 10, sceneView.maxDistance * 1.25]} />
       <PerspectiveCamera makeDefault position={sceneView.cameraPosition} fov={48} />
       <ambientLight intensity={0.78} color="#d8fbff" />
       <directionalLight position={[4, 7, 4]} intensity={2.4} color="#ffffff" castShadow />
@@ -423,11 +455,11 @@ export const ScreenDatacenterScene: React.FC<ScreenDatacenterSceneProps> = ({
 
       <mesh
         rotation={[-Math.PI / 2, 0, 0]}
-        position={[0, -0.025, 1.05]}
+        position={[floorCenter[0], -0.025, floorCenter[2]]}
         receiveShadow
         onClick={() => setSelectedCabinetId(null)}
       >
-        <planeGeometry args={[15, 11]} />
+        <planeGeometry args={[floorSize.width, floorSize.height]} />
         <meshStandardMaterial
           color="#174155"
           metalness={0.24}
@@ -437,12 +469,92 @@ export const ScreenDatacenterScene: React.FC<ScreenDatacenterSceneProps> = ({
         />
       </mesh>
 
-      <gridHelper args={[15, 30, '#0fe7ff', '#16435a']} position={[0, -0.018, 1.05]} />
+      <Grid
+        args={[floorSize.width, floorSize.height]}
+        position={[floorCenter[0], -0.018, floorCenter[2]]}
+        infiniteGrid={false}
+        cellSize={5}
+        sectionSize={5}
+        fadeDistance={sceneView.maxDistance}
+        fadeStrength={0.7}
+        cellColor="#79aaba"
+        sectionColor="#b8e8f0"
+      />
+
+      <group position={[0, 0.006, 0]}>
+        <mesh position={[floorSize.width / 2, 0, 0]}>
+          <boxGeometry args={[floorSize.width, 0.018, 0.12]} />
+          <meshStandardMaterial color="#00f0ff" emissive="#00bcd4" emissiveIntensity={0.7} />
+        </mesh>
+        <mesh position={[floorSize.width / 2, 0, floorSize.height]}>
+          <boxGeometry args={[floorSize.width, 0.018, 0.12]} />
+          <meshStandardMaterial color="#00f0ff" emissive="#00bcd4" emissiveIntensity={0.7} />
+        </mesh>
+        <mesh position={[0, 0, floorSize.height / 2]}>
+          <boxGeometry args={[0.12, 0.018, floorSize.height]} />
+          <meshStandardMaterial color="#00f0ff" emissive="#00bcd4" emissiveIntensity={0.7} />
+        </mesh>
+        <mesh position={[floorSize.width, 0, floorSize.height / 2]}>
+          <boxGeometry args={[0.12, 0.018, floorSize.height]} />
+          <meshStandardMaterial color="#00f0ff" emissive="#00bcd4" emissiveIntensity={0.7} />
+        </mesh>
+        {[
+          [0, 0],
+          [floorSize.width, 0],
+          [0, floorSize.height],
+          [floorSize.width, floorSize.height],
+        ].map(([x, z]) => (
+          <mesh key={`${x}-${z}`} position={[x, 0.09, z]}>
+            <boxGeometry args={[0.28, 0.18, 0.28]} />
+            <meshStandardMaterial color="#b9fbff" emissive="#00eaff" emissiveIntensity={0.9} />
+          </mesh>
+        ))}
+      </group>
+
+      <Text
+        position={[floorCenter[0], 0.035, -0.65]}
+        rotation={[-Math.PI / 2, 0, 0]}
+        fontSize={Math.max(0.45, Math.min(floorSize.width, floorSize.height) * 0.03)}
+        color="#c9fbff"
+        anchorX="center"
+        anchorY="middle"
+        outlineWidth={0.012}
+        outlineColor="#002433"
+      >
+        {`画布 ${floorSize.width}m × ${floorSize.height}m`}
+      </Text>
+
+      {(layout.zones || []).map((zone) => {
+        const color = zoneColor(zone.type);
+        return (
+          <mesh
+            key={zone.id}
+            rotation={[-Math.PI / 2, ((zone.rotation || 0) * Math.PI) / 180, 0]}
+            position={[zone.x + zone.width / 2, -0.014, zone.y + zone.height / 2]}
+            receiveShadow
+          >
+            <planeGeometry args={[zone.width, zone.height]} />
+            <meshStandardMaterial
+              color={color}
+              emissive={color}
+              emissiveIntensity={0.18}
+              transparent
+              opacity={0.28}
+              metalness={0}
+              roughness={0.8}
+            />
+          </mesh>
+        );
+      })}
 
       {cabinets.map((cabinet) => {
         const layoutItem = layoutByCabinetId.get(cabinet.id);
-        const x = layoutItem ? layoutItem.x : (cabinet.column - 1) * 1.2;
-        const z = layoutItem ? layoutItem.y : (cabinet.row - 1) * 1.6;
+        const x = layoutItem
+          ? layoutItem.x + CABINET_LAYOUT_WIDTH / 2
+          : (cabinet.column - 1) * 1.2 + CABINET_LAYOUT_WIDTH / 2;
+        const z = layoutItem
+          ? layoutItem.y + CABINET_LAYOUT_DEPTH / 2
+          : (cabinet.row - 1) * 1.6 + CABINET_LAYOUT_DEPTH / 2;
         const rotationY = (((layoutItem?.rotation || 0) * Math.PI) / 180);
         return (
           <ScreenCabinet3D
