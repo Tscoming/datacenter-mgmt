@@ -238,6 +238,11 @@ function canvasRotationToSceneYaw(rotation = 0) {
   return Math.PI - angle;
 }
 
+function cameraForwardFromCanvasRotation(rotation = 0) {
+  const yaw = canvasRotationToSceneYaw(rotation);
+  return new THREE.Vector3(Math.sin(yaw), 0, Math.cos(yaw)).normalize();
+}
+
 const CameraFrustumModel: React.FC<{ color: string }> = ({ color }) => {
   const geometry = useMemo(() => {
     const nearZ = 0.3;
@@ -297,8 +302,14 @@ const CameraFrustumModel: React.FC<{ color: string }> = ({ color }) => {
   );
 };
 
-const ScreenFacility3D: React.FC<{ facility: IDC.DatacenterLayoutFacilityItem }> = ({
+const ScreenFacility3D: React.FC<{
+  facility: IDC.DatacenterLayoutFacilityItem;
+  active: boolean;
+  onCameraSelect: (facility: IDC.DatacenterLayoutFacilityItem) => void;
+}> = ({
   facility,
+  active,
+  onCameraSelect,
 }) => {
   const lightRef = useRef<THREE.MeshStandardMaterial>(null);
   const meta = facilityMeta(facility.type);
@@ -311,13 +322,20 @@ const ScreenFacility3D: React.FC<{ facility: IDC.DatacenterLayoutFacilityItem }>
   });
 
   return (
-    <group position={[facility.x, 0.08, facility.y]}>
+    <group
+      position={[facility.x, 0.08, facility.y]}
+      onClick={(event) => {
+        if (facility.type !== 'camera') return;
+        event.stopPropagation();
+        onCameraSelect(facility);
+      }}
+    >
       <mesh position={[0, -0.035, 0]} receiveShadow>
         <cylinderGeometry args={[0.22, 0.22, 0.025, 32]} />
         <meshStandardMaterial
           color="#082536"
           emissive={meta.color}
-          emissiveIntensity={0.18}
+          emissiveIntensity={active ? 0.46 : 0.18}
           transparent
           opacity={0.9}
         />
@@ -457,7 +475,7 @@ const ScreenFacility3D: React.FC<{ facility: IDC.DatacenterLayoutFacilityItem }>
           <meshStandardMaterial
             color="#061d2a"
             emissive={meta.color}
-            emissiveIntensity={0.22}
+            emissiveIntensity={active ? 0.48 : 0.22}
             transparent
             opacity={0.74}
           />
@@ -762,6 +780,7 @@ export const ScreenDatacenterScene: React.FC<ScreenDatacenterSceneProps> = ({
 }) => {
   const [hoveredCabinetId, setHoveredCabinetId] = useState<string | null>(null);
   const [selectedCabinetId, setSelectedCabinetId] = useState<string | null>(null);
+  const [activeCameraFacilityId, setActiveCameraFacilityId] = useState<string | null>(null);
   const floorSize = useMemo(
     () => ({
       width: Math.max(1, layout.canvasWidth || 60),
@@ -837,12 +856,37 @@ export const ScreenDatacenterScene: React.FC<ScreenDatacenterSceneProps> = ({
       maxDistance: viewDistance * 1.8,
     };
   }, [cabinets, floorCenter, floorSize, layoutByCabinetId]);
+  const activeCameraFacility = useMemo(
+    () =>
+      (layout.facilities || []).find(
+        (facility) => facility.id === activeCameraFacilityId && facility.type === 'camera',
+      ) || null,
+    [activeCameraFacilityId, layout.facilities],
+  );
+  const effectiveSceneView = useMemo(() => {
+    if (!activeCameraFacility) return sceneView;
+
+    const cameraHeight = Math.max(0.4, activeCameraFacility.height ?? 2.5);
+    const forward = cameraForwardFromCanvasRotation(activeCameraFacility.rotation || 0);
+    const cameraPosition = new THREE.Vector3(
+      activeCameraFacility.x,
+      cameraHeight + 0.08,
+      activeCameraFacility.y,
+    ).add(forward.clone().multiplyScalar(0.26));
+    const target = cameraPosition.clone().add(forward.multiplyScalar(10));
+
+    return {
+      cameraPosition: cameraPosition.toArray() as [number, number, number],
+      target: target.toArray() as [number, number, number],
+      maxDistance: sceneView.maxDistance,
+    };
+  }, [activeCameraFacility, sceneView]);
 
   return (
     <>
       <color attach="background" args={['#0b1e2e']} />
-      <fog attach="fog" args={['#0b1e2e', 10, sceneView.maxDistance * 1.25]} />
-      <PerspectiveCamera makeDefault position={sceneView.cameraPosition} fov={48} />
+      <fog attach="fog" args={['#0b1e2e', 10, effectiveSceneView.maxDistance * 1.25]} />
+      <PerspectiveCamera makeDefault position={effectiveSceneView.cameraPosition} fov={48} />
       <ambientLight intensity={0.78} color="#d8fbff" />
       <directionalLight position={[4, 7, 4]} intensity={2.4} color="#ffffff" castShadow />
       <pointLight position={[-4, 3.2, 1.4]} intensity={3.2} color="#7df6ff" distance={10} />
@@ -853,7 +897,10 @@ export const ScreenDatacenterScene: React.FC<ScreenDatacenterSceneProps> = ({
         rotation={[-Math.PI / 2, 0, 0]}
         position={[floorCenter[0], -0.025, floorCenter[2]]}
         receiveShadow
-        onClick={() => setSelectedCabinetId(null)}
+        onClick={() => {
+          setSelectedCabinetId(null);
+          setActiveCameraFacilityId(null);
+        }}
       >
         <planeGeometry args={[floorSize.width, floorSize.height]} />
         <meshStandardMaterial
@@ -971,13 +1018,21 @@ export const ScreenDatacenterScene: React.FC<ScreenDatacenterSceneProps> = ({
       })}
 
       {(layout.facilities || []).map((facility) => (
-        <ScreenFacility3D key={facility.id} facility={facility} />
+        <ScreenFacility3D
+          key={facility.id}
+          facility={facility}
+          active={activeCameraFacilityId === facility.id}
+          onCameraSelect={(item) => {
+            setSelectedCabinetId(null);
+            setActiveCameraFacilityId(item.id);
+          }}
+        />
       ))}
 
       <SyncedOrbitControls
-        cameraPosition={sceneView.cameraPosition}
-        target={sceneView.target}
-        maxDistance={sceneView.maxDistance}
+        cameraPosition={effectiveSceneView.cameraPosition}
+        target={effectiveSceneView.target}
+        maxDistance={effectiveSceneView.maxDistance}
       />
     </>
   );
