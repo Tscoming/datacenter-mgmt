@@ -81,6 +81,7 @@ export const layout: RunTimeLayoutConfig = ({
     },
     waterMarkProps: {
       content: initialState?.currentUser?.name,
+      fontColor: 'rgba(0, 0, 0, 0.05)',
     },
     footerRender: () => <Footer />,
     onPageChange: () => {
