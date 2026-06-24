@@ -47,8 +47,30 @@
   display: flex;
   gap: 12px;
   align-items: center;
+  min-width: 0;
   color: #7ca5bd;
   font-size: 13px;
+}
+
+.datacenterSelect {
+  width: 190px;
+
+  :global {
+    .ant-select-selector {
+      border-color: rgba(0, 234, 255, 0.32) !important;
+      background: rgba(8, 24, 44, 0.9) !important;
+      box-shadow: inset 0 0 14px rgba(0, 234, 255, 0.06) !important;
+    }
+
+    .ant-select-selection-item {
+      color: #d9fbff;
+      font-size: 13px;
+    }
+
+    .ant-select-arrow {
+      color: #00eaff;
+    }
+  }
 }
 
 .systemStatus {

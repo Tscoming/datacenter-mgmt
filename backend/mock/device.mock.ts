@@ -288,6 +288,14 @@ const waitTime = (time: number = 100) => {
     });
 };
 
+const getDatacenterIdByCabinetId = (cabinetId: string) => {
+    if (cabinetId.startsWith('cab-bj-')) return 'dc-001';
+    if (cabinetId.startsWith('cab-sh-')) return 'dc-002';
+    if (cabinetId.startsWith('cab-sz-')) return 'dc-003';
+    if (cabinetId.startsWith('cab-cd-')) return 'dc-004';
+    return undefined;
+};
+
 export default {
     // 获取设备列表
     'GET /api/idc/devices': async (req: Request, res: Response) => {
@@ -302,6 +310,7 @@ export default {
             assetCode,
             managementIp,
             department,
+            datacenterId,
             isMounted,
         } = req.query;
 
@@ -309,6 +318,9 @@ export default {
 
         if (cabinetId) {
             filteredData = filteredData.filter(d => d.cabinetId === cabinetId);
+        }
+        if (datacenterId) {
+            filteredData = filteredData.filter(d => getDatacenterIdByCabinetId(d.cabinetId) === datacenterId);
         }
         if (templateId) {
             filteredData = filteredData.filter(d => d.templateId === templateId);

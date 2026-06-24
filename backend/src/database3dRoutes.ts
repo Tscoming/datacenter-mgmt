@@ -704,6 +704,10 @@ const getDevices = async (req: Request, schema: string) => {
     params.push(String(req.query.cabinetId));
     filters.push(`ri.cabinet_id = $${params.length}`);
   }
+  if (req.query.datacenterId) {
+    params.push(String(req.query.datacenterId));
+    filters.push(`c.datacenter_id = $${params.length}`);
+  }
   if (req.query.templateId) {
     params.push(String(req.query.templateId));
     filters.push(`d.template_id = $${params.length}`);
@@ -753,6 +757,7 @@ const getDevices = async (req: Request, schema: string) => {
           on ri.device_id = d.id
           and ri.asset_type = 'device'
           and ri.valid_to is null
+        left join ${schemaName}.cabinet c on c.id = ri.cabinet_id
         ${where}
       ),
       total_count as (

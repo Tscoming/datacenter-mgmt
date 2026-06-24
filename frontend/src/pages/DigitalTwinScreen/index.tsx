@@ -1,5 +1,6 @@
 import { Area, Line } from '@ant-design/charts';
 import { Canvas } from '@react-three/fiber';
+import { Select } from 'antd';
 import {
   AlertTriangle,
   CheckSquare,
@@ -16,12 +17,19 @@ import {
   Zap,
 } from 'lucide-react';
 import { Suspense, useEffect, useMemo, useState } from 'react';
+import { getCabinetsByDatacenter } from '@/services/idc/cabinet';
+import { getDatacenter, getAllDatacenters } from '@/services/idc/datacenter';
+import { getDevices } from '@/services/idc/device';
+import { getCabinetEnvironments } from '@/services/idc/environment';
+import { getDatacenterLayout } from '@/services/idc/layout';
 import {
   getDigitalTwinScreenData,
   type DigitalTwinScreenData,
 } from '@/services/idc/screen';
 import { ScreenDatacenterScene } from './ScreenDatacenterScene';
 import styles from './index.less';
+
+type ScreenDatacenterOption = { id: string; name: string; code: string };
 
 const chartTheme = {
   styleSheet: {
@@ -123,15 +131,163 @@ const AlertTicker: React.FC<{ alerts: IDC.AlertDetail[] }> = ({ alerts }) => (
   </div>
 );
 
+const getScreenDatacenterId = () => {
+  const params = new URLSearchParams(window.location.search);
+  return params.get('datacenterId') || params.get('id') || undefined;
+};
+
+const loadDevicesByDatacenter = async (datacenterId: string) => {
+  const pageSize = 200;
+  const firstPage = await getDevices({
+    current: 1,
+    pageSize,
+    datacenterId,
+  });
+  if (!firstPage.success) {
+    throw new Error('Failed to load devices by datacenter.');
+  }
+  const devices = [...(firstPage.data || [])];
+  const total = firstPage.total || devices.length;
+  const totalPages = Math.ceil(total / pageSize);
+
+  if (totalPages <= 1) return devices;
+
+  const pages = Array.from({ length: totalPages - 1 }, (_, index) => index + 2);
+  const restPages = await Promise.all(
+    pages.map((page) =>
+      getDevices({
+        current: page,
+        pageSize,
+        datacenterId,
+      }),
+    ),
+  );
+
+  for (const page of restPages) {
+    if (!page.success) {
+      throw new Error('Failed to load devices by datacenter.');
+    }
+    devices.push(...(page.data || []));
+  }
+
+  return devices;
+};
+
+const loadScreenSceneData = async (
+  baseData: DigitalTwinScreenData,
+  selectedDatacenterId: string,
+): Promise<DigitalTwinScreenData> => {
+  const [datacenterRes, cabinetRes, layoutRes, devices, envRes] =
+    await Promise.all([
+      getDatacenter(selectedDatacenterId),
+      getCabinetsByDatacenter(selectedDatacenterId),
+      getDatacenterLayout(selectedDatacenterId),
+      loadDevicesByDatacenter(selectedDatacenterId),
+      getCabinetEnvironments(),
+    ]);
+
+  if (!datacenterRes.success || !datacenterRes.data) {
+    throw new Error(`Failed to load datacenter ${selectedDatacenterId}.`);
+  }
+  if (!cabinetRes.success || !cabinetRes.data) {
+    throw new Error(`Failed to load cabinets for datacenter ${selectedDatacenterId}.`);
+  }
+  if (!layoutRes.success || !layoutRes.data) {
+    throw new Error(`Failed to load layout for datacenter ${selectedDatacenterId}.`);
+  }
+  if (!envRes.success || !envRes.data) {
+    throw new Error('Failed to load cabinet environment data.');
+  }
+
+  const cabinetEnvironments = (envRes.data || []).filter(
+    (item) => item.datacenterId === selectedDatacenterId,
+  );
+
+  return {
+    ...baseData,
+    datacenter: datacenterRes.data,
+    layout: layoutRes.data,
+    cabinets: cabinetRes.data,
+    devices,
+    cabinetEnvironments,
+  };
+};
+
+const loadDigitalTwinScreenData = async (datacenterId?: string) => {
+  const [screenRes, dcListRes] = await Promise.all([
+    getDigitalTwinScreenData(),
+    getAllDatacenters(),
+  ]);
+
+  if (!screenRes.success || !screenRes.data) {
+    throw new Error('Digital twin screen data is unavailable.');
+  }
+  if (!dcListRes.success || !dcListRes.data) {
+    throw new Error('Failed to load datacenter list.');
+  }
+
+  const selectedDatacenterId = datacenterId || getScreenDatacenterId() || dcListRes.data[0]?.id;
+  if (!selectedDatacenterId) {
+    throw new Error('No datacenter is available for the digital twin screen scene.');
+  }
+
+  return {
+    datacenters: dcListRes.data,
+    selectedDatacenterId,
+    data: await loadScreenSceneData(screenRes.data, selectedDatacenterId),
+  };
+};
+
 const DigitalTwinScreen: React.FC = () => {
   const [data, setData] = useState<DigitalTwinScreenData | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [datacenters, setDatacenters] = useState<ScreenDatacenterOption[]>([]);
+  const [selectedDatacenterId, setSelectedDatacenterId] = useState<string>();
   const [currentTime, setCurrentTime] = useState(new Date());
 
   useEffect(() => {
-    getDigitalTwinScreenData().then((res) => {
-      if (res.success && res.data) setData(res.data);
-    });
+    let cancelled = false;
+
+    const loadData = async () => {
+      try {
+        const result = await loadDigitalTwinScreenData();
+        if (!cancelled) {
+          setDatacenters(result.datacenters);
+          setSelectedDatacenterId(result.selectedDatacenterId);
+          setData(result.data);
+          setErrorMessage(null);
+        }
+      } catch (error) {
+        console.error('Failed to load digital twin screen scene data:', error);
+        if (!cancelled) {
+          setData(null);
+          setErrorMessage(error instanceof Error ? error.message : 'Failed to load digital twin screen scene data.');
+        }
+      }
+    };
+
+    loadData();
+    return () => {
+      cancelled = true;
+    };
   }, []);
+
+  const handleDatacenterChange = async (datacenterId: string) => {
+    setSelectedDatacenterId(datacenterId);
+    setData(null);
+    setErrorMessage(null);
+
+    try {
+      const result = await loadDigitalTwinScreenData(datacenterId);
+      setDatacenters(result.datacenters);
+      setSelectedDatacenterId(result.selectedDatacenterId);
+      setData(result.data);
+    } catch (error) {
+      console.error('Failed to load digital twin screen scene data:', error);
+      setData(null);
+      setErrorMessage(error instanceof Error ? error.message : 'Failed to load digital twin screen scene data.');
+    }
+  };
 
   useEffect(() => {
     const timer = window.setInterval(() => setCurrentTime(new Date()), 1000);
@@ -209,6 +365,10 @@ const DigitalTwinScreen: React.FC = () => {
     [data?.charts.powerTrend],
   );
 
+  if (errorMessage) {
+    return <div className={styles.loading}>3D机柜数据加载失败：{errorMessage}</div>;
+  }
+
   if (!data) {
     return <div className={styles.loading}>加载数字孪生大屏...</div>;
   }
@@ -241,6 +401,16 @@ const DigitalTwinScreen: React.FC = () => {
             second: '2-digit',
           })}
           <CloudSun size={15} />
+          <Select
+            className={styles.datacenterSelect}
+            value={selectedDatacenterId}
+            popupMatchSelectWidth={false}
+            onChange={handleDatacenterChange}
+            options={datacenters.map((item) => ({
+              value: item.id,
+              label: item.name,
+            }))}
+          />
           25℃ 晴朗
         </div>
         <h1>{data.datacenter.name}</h1>

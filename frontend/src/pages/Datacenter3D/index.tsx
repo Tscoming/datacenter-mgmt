@@ -229,12 +229,12 @@ const Datacenter3DPage: React.FC = () => {
   const fetchDevices = useCallback(
     async (page: number, pageSize: number) => {
       if (!selectedDc) return { data: [], total: 0 };
-      // 获取当前数据中心的所有机柜ID（需要先获取机柜）
-      // 由于API限制，这里我们假设后端支持通过 datacenterId 获取设备
-      // 或者我们需要先获取机柜，然后筛选。
-      // 为了性能，我们仍然使用之前的逻辑：获取所有设备然后前端筛选（分批加载）
-      // 注意：实际生产中应该有 getDevicesByDatacenter 接口
-      const res = await getDevices({ current: page, pageSize });
+      // 通过 datacenterId 只加载当前数据中心的设备，避免全量设备前端筛选。
+      const res = await getDevices({
+        current: page,
+        pageSize,
+        datacenterId: selectedDc,
+      });
       return {
         data: res.data || [],
         total: res.total || 0,

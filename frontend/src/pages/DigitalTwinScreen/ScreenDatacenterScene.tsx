@@ -5,8 +5,8 @@ import {
   PerspectiveCamera,
   Text,
 } from '@react-three/drei';
-import { useFrame } from '@react-three/fiber';
-import { useMemo, useRef, useState } from 'react';
+import { useFrame, useThree } from '@react-three/fiber';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import * as THREE from 'three';
 
 interface ScreenDatacenterSceneProps {
@@ -31,6 +31,8 @@ const statusText: Record<string, string> = {
   offline: '离线',
   critical: '严重',
 };
+
+const disableRaycast = () => undefined;
 
 const CabinetGlow: React.FC<{ color: string; width: number; height: number; depth: number }> = ({
   color,
@@ -68,6 +70,36 @@ const StatusLight: React.FC<{ color: string; alerting: boolean; position: [numbe
         toneMapped={false}
       />
     </mesh>
+  );
+};
+
+const SyncedOrbitControls: React.FC<{
+  cameraPosition: [number, number, number];
+  target: [number, number, number];
+  maxDistance: number;
+}> = ({ cameraPosition, target, maxDistance }) => {
+  const { camera } = useThree();
+  const controlsRef = useRef<any>(null);
+
+  useEffect(() => {
+    camera.position.set(...cameraPosition);
+    camera.lookAt(...target);
+    camera.updateProjectionMatrix();
+    controlsRef.current?.target.set(...target);
+    controlsRef.current?.update();
+  }, [camera, cameraPosition, target]);
+
+  return (
+    <OrbitControls
+      ref={controlsRef}
+      enableDamping
+      dampingFactor={0.06}
+      minDistance={4}
+      maxDistance={maxDistance}
+      minPolarAngle={Math.PI / 5}
+      maxPolarAngle={Math.PI / 2.25}
+      target={target}
+    />
   );
 };
 
@@ -142,9 +174,9 @@ const ScreenCabinet3D: React.FC<{
       <mesh castShadow receiveShadow>
         <boxGeometry args={[width, height, depth]} />
         <meshStandardMaterial
-          color={hovered || selected ? '#0d8b9a' : '#063c47'}
-          emissive={hovered || selected ? '#00d8ff' : '#003a44'}
-          emissiveIntensity={selected ? 0.42 : hovered ? 0.32 : 0.12}
+          color={hovered || selected ? '#19b8c8' : '#0b6573'}
+          emissive={hovered || selected ? '#34f0ff' : '#087484'}
+          emissiveIntensity={selected ? 0.55 : hovered ? 0.42 : 0.18}
           metalness={0.65}
           roughness={0.38}
         />
@@ -259,7 +291,7 @@ const ScreenCabinet3D: React.FC<{
       />
 
       <Billboard position={[0, height / 2 + 0.35, depth / 2 - 0.04]}>
-        <mesh>
+        <mesh raycast={disableRaycast}>
           <boxGeometry args={[1.05, 0.28, 0.035]} />
           <meshStandardMaterial
             color="#062936"
@@ -270,6 +302,7 @@ const ScreenCabinet3D: React.FC<{
           />
         </mesh>
         <Text
+          raycast={disableRaycast}
           position={[0, 0.005, 0.03]}
           fontSize={0.15}
           color={color}
@@ -341,17 +374,52 @@ export const ScreenDatacenterScene: React.FC<ScreenDatacenterSceneProps> = ({
     () => new Map(cabinetEnvironments.map((item) => [item.cabinetId, item] as const)),
     [cabinetEnvironments],
   );
+  const sceneView = useMemo(() => {
+    if (!cabinets.length) {
+      return {
+        cameraPosition: [9, 9, 12] as [number, number, number],
+        target: [0, 1.15, 1.2] as [number, number, number],
+        maxDistance: 24,
+      };
+    }
+
+    const points = cabinets.map((cabinet) => {
+      const layoutItem = layoutByCabinetId.get(cabinet.id);
+      return {
+        x: layoutItem ? layoutItem.x : (cabinet.column - 1) * 1.2,
+        z: layoutItem ? layoutItem.y : (cabinet.row - 1) * 1.6,
+      };
+    });
+    const minX = Math.min(...points.map((item) => item.x));
+    const maxX = Math.max(...points.map((item) => item.x));
+    const minZ = Math.min(...points.map((item) => item.z));
+    const maxZ = Math.max(...points.map((item) => item.z));
+    const centerX = (minX + maxX) / 2;
+    const centerZ = (minZ + maxZ) / 2;
+    const span = Math.max(maxX - minX, maxZ - minZ, 6);
+    const distance = Math.min(Math.max(span * 1.85, 12), 32);
+
+    return {
+      cameraPosition: [
+        centerX + distance * 0.68,
+        distance * 0.78,
+        centerZ + distance,
+      ] as [number, number, number],
+      target: [centerX, 1.1, centerZ] as [number, number, number],
+      maxDistance: distance * 1.8,
+    };
+  }, [cabinets, layoutByCabinetId]);
 
   return (
     <>
-      <color attach="background" args={['#06111e']} />
-      <fog attach="fog" args={['#06111e', 6, 16]} />
-      <PerspectiveCamera makeDefault position={[4.8, 3.2, 6.6]} fov={42} />
-      <ambientLight intensity={0.34} color="#75f7ff" />
-      <directionalLight position={[4, 6, 4]} intensity={1.55} color="#e7fcff" castShadow />
-      <pointLight position={[-4, 2.4, 1.4]} intensity={2.2} color="#00e5ff" distance={7} />
-      <pointLight position={[3.4, 2.1, -2]} intensity={1.35} color="#9af6ff" distance={7} />
-      <spotLight position={[0, 5, 4]} angle={0.5} penumbra={0.7} intensity={1.4} color="#b9fbff" />
+      <color attach="background" args={['#0b1e2e']} />
+      <fog attach="fog" args={['#0b1e2e', 10, 26]} />
+      <PerspectiveCamera makeDefault position={sceneView.cameraPosition} fov={48} />
+      <ambientLight intensity={0.78} color="#d8fbff" />
+      <directionalLight position={[4, 7, 4]} intensity={2.4} color="#ffffff" castShadow />
+      <pointLight position={[-4, 3.2, 1.4]} intensity={3.2} color="#7df6ff" distance={10} />
+      <pointLight position={[3.4, 2.8, -2]} intensity={2.45} color="#c7fbff" distance={10} />
+      <spotLight position={[0, 6, 4]} angle={0.58} penumbra={0.68} intensity={2.1} color="#f2ffff" />
 
       <mesh
         rotation={[-Math.PI / 2, 0, 0]}
@@ -361,11 +429,11 @@ export const ScreenDatacenterScene: React.FC<ScreenDatacenterSceneProps> = ({
       >
         <planeGeometry args={[15, 11]} />
         <meshStandardMaterial
-          color="#0b2634"
-          metalness={0.36}
-          roughness={0.5}
-          emissive="#021923"
-          emissiveIntensity={0.32}
+          color="#174155"
+          metalness={0.24}
+          roughness={0.46}
+          emissive="#0b3144"
+          emissiveIntensity={0.48}
         />
       </mesh>
 
@@ -392,14 +460,10 @@ export const ScreenDatacenterScene: React.FC<ScreenDatacenterSceneProps> = ({
         );
       })}
 
-      <OrbitControls
-        enableDamping
-        dampingFactor={0.06}
-        minDistance={4}
-        maxDistance={12}
-        minPolarAngle={Math.PI / 5}
-        maxPolarAngle={Math.PI / 2.25}
-        target={[0, 1.15, 1.2]}
+      <SyncedOrbitControls
+        cameraPosition={sceneView.cameraPosition}
+        target={sceneView.target}
+        maxDistance={sceneView.maxDistance}
       />
     </>
   );
