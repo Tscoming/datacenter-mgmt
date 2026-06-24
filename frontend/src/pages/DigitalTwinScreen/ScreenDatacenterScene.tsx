@@ -7,6 +7,7 @@ import {
   Text,
 } from '@react-three/drei';
 import { useFrame, useThree } from '@react-three/fiber';
+import { history } from '@umijs/max';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import * as THREE from 'three';
 
@@ -778,7 +779,25 @@ const ScreenCabinet3D: React.FC<{
                 pointerEvents: 'none',
               }}
             >
-              <div style={{ color, fontSize: 16, fontWeight: 700, marginBottom: 4 }}>机柜 {cabinet.code}</div>
+              <div
+                onClick={(event) => {
+                  event.stopPropagation();
+                  history.push(`/cabinet3d?id=${cabinet.id}`);
+                }}
+                style={{
+                  color,
+                  cursor: 'pointer',
+                  fontSize: 16,
+                  fontWeight: 700,
+                  marginBottom: 4,
+                  pointerEvents: 'auto',
+                  textDecoration: 'underline',
+                  textUnderlineOffset: 3,
+                }}
+                title="查看机柜详情"
+              >
+                {cabinet.name || cabinet.code}
+              </div>
               <div>
                 状态: <span style={{ color }}>{statusText[activeStatus] || activeStatus}</span>
               </div>
@@ -986,7 +1005,7 @@ export const ScreenDatacenterScene: React.FC<ScreenDatacenterSceneProps> = ({
         outlineWidth={0.012}
         outlineColor="#002433"
       >
-        {`画布 ${floorSize.width}m × ${floorSize.height}m`}
+        {`${floorSize.width}m × ${floorSize.height}m`}
       </Text>
 
       {(layout.zones || []).map((zone) => {
