@@ -1,8 +1,10 @@
 import { Area, Line } from '@ant-design/charts';
 import { Canvas } from '@react-three/fiber';
-import { Select } from 'antd';
+import { history } from '@umijs/max';
+import { Button, Select } from 'antd';
 import {
   AlertTriangle,
+  ArrowLeft,
   CheckSquare,
   CloudSun,
   Cpu,
@@ -289,6 +291,14 @@ const DigitalTwinScreen: React.FC = () => {
     }
   };
 
+  const handleBack = () => {
+    if (window.history.length > 1) {
+      history.back();
+      return;
+    }
+    history.push('/dashboard');
+  };
+
   useEffect(() => {
     const timer = window.setInterval(() => setCurrentTime(new Date()), 1000);
     return () => window.clearInterval(timer);
@@ -391,6 +401,14 @@ const DigitalTwinScreen: React.FC = () => {
     <div className={styles.screen}>
       <header className={styles.header}>
         <div className={styles.headerMeta}>
+          <Button
+            className={styles.backButton}
+            type="text"
+            icon={<ArrowLeft size={16} />}
+            onClick={handleBack}
+          >
+            返回
+          </Button>
           {currentTime.toLocaleString('zh-CN', {
             year: 'numeric',
             month: '2-digit',
