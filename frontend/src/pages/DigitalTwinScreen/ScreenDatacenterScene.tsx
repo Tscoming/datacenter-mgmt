@@ -922,6 +922,27 @@ export const ScreenDatacenterScene: React.FC<ScreenDatacenterSceneProps> = ({
       maxDistance: sceneView.maxDistance,
     };
   }, [activeCameraFacility, sceneView]);
+  const balancedLightSources = useMemo(
+    () => [
+      {
+        id: 'left-balanced-light',
+        position: [floorSize.width * 0.25, 3.4, floorSize.height * 0.5] as [
+          number,
+          number,
+          number,
+        ],
+      },
+      {
+        id: 'right-balanced-light',
+        position: [floorSize.width * 0.75, 3.4, floorSize.height * 0.5] as [
+          number,
+          number,
+          number,
+        ],
+      },
+    ],
+    [floorSize.height, floorSize.width],
+  );
 
   return (
     <>
@@ -930,8 +951,15 @@ export const ScreenDatacenterScene: React.FC<ScreenDatacenterSceneProps> = ({
       <PerspectiveCamera makeDefault position={effectiveSceneView.cameraPosition} fov={48} />
       <ambientLight intensity={0.78} color="#d8fbff" />
       <directionalLight position={[4, 7, 4]} intensity={2.4} color="#ffffff" castShadow />
-      <pointLight position={[-4, 3.2, 1.4]} intensity={3.2} color="#7df6ff" distance={10} />
-      <pointLight position={[3.4, 2.8, -2]} intensity={2.45} color="#c7fbff" distance={10} />
+      {balancedLightSources.map((light, index) => (
+        <pointLight
+          key={`${light.id}-point`}
+          position={light.position}
+          intensity={index === 0 ? 3.2 : 2.45}
+          color={index === 0 ? '#7df6ff' : '#c7fbff'}
+          distance={Math.max(floorSize.width, floorSize.height) * 0.62}
+        />
+      ))}
       <spotLight position={[0, 6, 4]} angle={0.58} penumbra={0.68} intensity={2.1} color="#f2ffff" />
 
       <mesh
