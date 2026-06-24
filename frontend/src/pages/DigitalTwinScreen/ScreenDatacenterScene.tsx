@@ -46,6 +46,14 @@ const zoneColor = (type: IDC.LayoutZoneType) => {
   return '#16f19a';
 };
 
+const zoneLabel = (type: IDC.LayoutZoneType) => {
+  if (type === 'hot_aisle') return '热通道';
+  if (type === 'cold_aisle') return '冷通道';
+  if (type === 'restricted') return '受限区';
+  if (type === 'zone') return '区域';
+  return '其他区域';
+};
+
 const CabinetGlow: React.FC<{ color: string; width: number; height: number; depth: number }> = ({
   color,
   width,
@@ -251,7 +259,8 @@ function cameraDirectionFromFacility(facility: IDC.DatacenterLayoutFacilityItem)
   ).normalize();
 }
 
-const CameraFrustumModel: React.FC<{ color: string }> = ({ color }) => {
+const CameraFrustumModel: React.FC = () => {
+  const color = '#8fa5ad';
   const geometry = useMemo(() => {
     const nearZ = 0.3;
     const farZ = 1.15;
@@ -320,16 +329,27 @@ const ScreenFacility3D: React.FC<{
   onCameraSelect,
 }) => {
   const lightRef = useRef<THREE.MeshStandardMaterial>(null);
+  const sensorGlowRef = useRef<THREE.MeshBasicMaterial>(null);
   const meta = facilityMeta(facility.type);
   const facilityRotationY = canvasRotationToSceneYaw(facility.rotation || 0);
   const cameraHeight = facility.type === 'camera' ? Math.max(0.4, facility.height ?? 2.5) : 0.88;
+  const doorWidth = 0.9;
+  const doorHeight = 2.1;
+  const doorDepth = 0.08;
+  const labelHeight =
+    facility.type === 'camera' ? cameraHeight + 0.34 : facility.type === 'door' ? doorHeight + 0.34 : 1.02;
   const cameraPitch = THREE.MathUtils.degToRad(
     Math.max(-90, Math.min(90, facility.pitch ?? 0)),
   );
 
   useFrame(({ clock }) => {
-    if (!lightRef.current) return;
-    lightRef.current.emissiveIntensity = 0.8 + Math.sin(clock.elapsedTime * 3.2) * 0.22;
+    const pulse = 0.8 + Math.sin(clock.elapsedTime * 3.2) * 0.22;
+    if (lightRef.current) {
+      lightRef.current.emissiveIntensity = pulse;
+    }
+    if (sensorGlowRef.current) {
+      sensorGlowRef.current.opacity = 0.08 + Math.sin(clock.elapsedTime * 3.2) * 0.035;
+    }
   });
 
   return (
@@ -341,33 +361,21 @@ const ScreenFacility3D: React.FC<{
         onCameraSelect(facility);
       }}
     >
-      <mesh position={[0, -0.035, 0]} receiveShadow>
-        <cylinderGeometry args={[0.22, 0.22, 0.025, 32]} />
-        <meshStandardMaterial
-          color="#082536"
-          emissive={meta.color}
-          emissiveIntensity={active ? 0.46 : 0.18}
-          transparent
-          opacity={0.9}
-        />
-      </mesh>
+      {!['camera', 'door', 'sensor'].includes(facility.type) && (
+        <mesh position={[0, -0.035, 0]} receiveShadow>
+          <cylinderGeometry args={[0.22, 0.22, 0.025, 32]} />
+          <meshStandardMaterial
+            color="#082536"
+            emissive={meta.color}
+            emissiveIntensity={active ? 0.46 : 0.18}
+            transparent
+            opacity={0.9}
+          />
+        </mesh>
+      )}
 
       {facility.type === 'camera' && (
         <group rotation={[0, facilityRotationY, 0]}>
-          <mesh position={[0, cameraHeight / 2, 0]}>
-            <cylinderGeometry args={[0.025, 0.025, Math.max(0.3, cameraHeight - 0.16), 12]} />
-            <meshStandardMaterial color="#557283" metalness={0.45} roughness={0.38} />
-          </mesh>
-          <mesh position={[0, cameraHeight - 0.12, 0]}>
-            <sphereGeometry args={[0.095, 18, 18]} />
-            <meshStandardMaterial
-              color="#34515f"
-              emissive={meta.color}
-              emissiveIntensity={0.12}
-              metalness={0.35}
-              roughness={0.4}
-            />
-          </mesh>
           <group position={[0, cameraHeight, 0.02]} rotation={[-cameraPitch, 0, 0]}>
             <mesh>
               <boxGeometry args={[0.32, 0.2, 0.18]} />
@@ -389,7 +397,7 @@ const ScreenFacility3D: React.FC<{
               />
             </mesh>
             <group position={[0, 0, 0.2]}>
-              <CameraFrustumModel color={meta.color} />
+              <CameraFrustumModel />
             </group>
           </group>
         </group>
@@ -420,8 +428,8 @@ const ScreenFacility3D: React.FC<{
 
       {facility.type === 'door' && (
         <group rotation={[0, facilityRotationY, 0]}>
-          <mesh position={[0, 0.42, 0]}>
-            <boxGeometry args={[0.52, 0.78, 0.045]} />
+          <mesh position={[0, doorHeight / 2, 0]}>
+            <boxGeometry args={[doorWidth, doorHeight, doorDepth]} />
             <meshStandardMaterial
               color="#2f2a1d"
               emissive={meta.color}
@@ -430,12 +438,12 @@ const ScreenFacility3D: React.FC<{
               roughness={0.5}
             />
           </mesh>
-          <lineSegments position={[0, 0.42, 0.028]}>
-            <edgesGeometry args={[new THREE.BoxGeometry(0.56, 0.82, 0.055)]} />
+          <lineSegments position={[0, doorHeight / 2, doorDepth / 2 + 0.006]}>
+            <edgesGeometry args={[new THREE.BoxGeometry(doorWidth + 0.06, doorHeight + 0.06, 0.02)]} />
             <lineBasicMaterial color={meta.color} transparent opacity={0.95} />
           </lineSegments>
-          <mesh position={[0.18, 0.43, 0.055]}>
-            <boxGeometry args={[0.08, 0.14, 0.028]} />
+          <mesh position={[doorWidth * 0.32, doorHeight * 0.52, doorDepth / 2 + 0.035]}>
+            <boxGeometry args={[0.12, 0.22, 0.035]} />
             <meshStandardMaterial
               ref={lightRef}
               color={meta.color}
@@ -448,10 +456,6 @@ const ScreenFacility3D: React.FC<{
 
       {facility.type === 'sensor' && (
         <>
-          <mesh position={[0, 0.28, 0]}>
-            <cylinderGeometry args={[0.018, 0.018, 0.42, 12]} />
-            <meshStandardMaterial color="#42606d" metalness={0.35} roughness={0.4} />
-          </mesh>
           <mesh position={[0, 0.55, 0]}>
             <sphereGeometry args={[0.12, 24, 24]} />
             <meshStandardMaterial
@@ -466,6 +470,7 @@ const ScreenFacility3D: React.FC<{
           <mesh position={[0, 0.55, 0]}>
             <sphereGeometry args={[0.28, 24, 24]} />
             <meshBasicMaterial
+              ref={sensorGlowRef}
               color={meta.color}
               transparent
               opacity={0.09}
@@ -492,7 +497,7 @@ const ScreenFacility3D: React.FC<{
         </group>
       )}
 
-      <Billboard position={[0, facility.type === 'camera' ? cameraHeight + 0.34 : 1.02, 0]}>
+      <Billboard position={[0, labelHeight, 0]}>
         <mesh raycast={disableRaycast}>
           <boxGeometry args={[0.9, 0.22, 0.028]} />
           <meshStandardMaterial
@@ -507,10 +512,10 @@ const ScreenFacility3D: React.FC<{
           raycast={disableRaycast}
           position={[0, 0.004, 0.026]}
           fontSize={0.105}
-          color={meta.color}
+          color="#ffffff"
           anchorX="center"
           anchorY="middle"
-          outlineWidth={0.004}
+          outlineWidth={0.006}
           outlineColor="#00151d"
         >
           {facility.name || meta.label}
@@ -1038,10 +1043,11 @@ export const ScreenDatacenterScene: React.FC<ScreenDatacenterSceneProps> = ({
 
       {(layout.zones || []).map((zone) => {
         const color = zoneColor(zone.type);
+        const rotationY = ((zone.rotation || 0) * Math.PI) / 180;
         return (
           <group key={zone.id}>
             <mesh
-              rotation={[-Math.PI / 2, ((zone.rotation || 0) * Math.PI) / 180, 0]}
+              rotation={[-Math.PI / 2, rotationY, 0]}
               position={[zone.x + zone.width / 2, -0.014, zone.y + zone.height / 2]}
               receiveShadow
             >
@@ -1056,6 +1062,18 @@ export const ScreenDatacenterScene: React.FC<ScreenDatacenterSceneProps> = ({
                 roughness={0.8}
               />
             </mesh>
+            <Text
+              position={[zone.x + zone.width / 2, 0.028, zone.y + zone.height / 2]}
+              rotation={[-Math.PI / 2, 0, rotationY]}
+              fontSize={Math.max(0.22, Math.min(zone.width, zone.height) * 0.16)}
+              color="#f2ffff"
+              anchorX="center"
+              anchorY="middle"
+              outlineWidth={0.01}
+              outlineColor="#00151d"
+            >
+              {zone.name || zoneLabel(zone.type)}
+            </Text>
             <AisleAirflow zone={zone} />
           </group>
         );
