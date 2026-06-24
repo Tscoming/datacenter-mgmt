@@ -82,7 +82,7 @@ const mapUser = (row: UserRow) => ({
   lastLoginAt: row.last_login_at || undefined,
 });
 
-const ensureUserTable = async (req: Request, schema: string) => {
+export const ensureUserTable = async (req: Request, schema: string) => {
   const schemaName = quoteIdentifier(schema);
   await queryDatabase(
     req,

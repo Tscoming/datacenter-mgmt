@@ -7,12 +7,12 @@ const Footer: React.FC = () => {
       style={{
         background: 'none',
       }}
-      copyright="Powered by Go-Laoji,with Claude Sonnet 4.5"
+      copyright="Powered by Dell Profession Service"
       links={[
         {
           key: 'iColor.Design',
-          title: 'iColor.Design(另一个小玩具)',
-          href: 'https://icolor.design',
+          title: 'Datacenter Digital Twin',
+          href: 'https://en.wikipedia.org/wiki/Digital_twin',
           blankTarget: true,
         },
       ]}

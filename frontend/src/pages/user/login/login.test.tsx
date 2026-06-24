@@ -79,7 +79,7 @@ describe('Login Page', () => {
     });
 
     const passwordInput = await rootContainer.findByPlaceholderText(
-      'Password: ant.design',
+      'Password',
     );
 
     act(() => {

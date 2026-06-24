@@ -1,5 +1,7 @@
 import crypto from 'node:crypto';
 import type { Request, Response } from 'express';
+import { getDatabaseSchema, queryDatabase, quoteIdentifier } from './db';
+import { ensureUserTable } from './databaseUserRoutes';
 
 type UserRole = 'admin' | 'user';
 
@@ -13,10 +15,28 @@ type AuthUser = {
   avatar?: string;
   title?: string;
   department?: string;
-  passwordSalt: string;
-  passwordHash: string;
   createdAt: string;
   updatedAt: string;
+  lastLoginAt?: string;
+  passwordSalt: string;
+  passwordHash: string;
+};
+
+type AuthUserRow = {
+  id: string;
+  username: string;
+  name: string;
+  email: string;
+  role: UserRole;
+  status: 'active' | 'disabled';
+  avatar: string | null;
+  title: string | null;
+  department: string | null;
+  created_at: string;
+  updated_at: string;
+  last_login_at: string | null;
+  password_salt: string;
+  password_hash: string;
 };
 
 type SessionRecord = {
@@ -29,53 +49,30 @@ type SessionRecord = {
 const hashPassword = (password: string, salt: string) =>
   crypto.createHash('sha256').update(`${salt}:${password}`).digest('hex');
 
-const createPasswordFields = (password: string) => {
-  const passwordSalt = crypto.randomBytes(12).toString('hex');
-  return {
-    passwordSalt,
-    passwordHash: hashPassword(password, passwordSalt),
-  };
-};
-
-const nowIso = () => new Date().toISOString();
-
-const createUser = (
-  id: string,
-  username: string,
-  password: string,
-  role: UserRole,
-  name: string,
-  email: string,
-): AuthUser => {
-  const timestamp = nowIso();
-  return {
-    id,
-    username,
-    name,
-    email,
-    role,
-    status: 'active',
-    avatar:
-      role === 'admin'
-        ? 'https://gw.alipayobjects.com/zos/antfincdn/XAosXuNZyF/BiazfanxmamNRoxxVxka.png'
-        : undefined,
-    title: role === 'admin' ? '系统管理员' : '运维工程师',
-    department: role === 'admin' ? '平台管理部' : '数据中心运维部',
-    createdAt: timestamp,
-    updatedAt: timestamp,
-    ...createPasswordFields(password),
-  };
-};
-
-const users = [
-  createUser('u_admin', 'admin', 'ant.design', 'admin', '系统管理员', 'admin@datacenter.local'),
-  createUser('u_user', 'user', 'ant.design', 'user', '普通用户', 'user@datacenter.local'),
-];
-
 const sessionsByToken = new Map<string, SessionRecord>();
 const sessionsByRefreshToken = new Map<string, SessionRecord>();
 
 const generateToken = () => `tk_${crypto.randomBytes(18).toString('hex')}_${Date.now()}`;
+
+const isoExpr = (column: string) =>
+  `to_char(${column} at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"')`;
+
+const mapAuthUser = (row: AuthUserRow): AuthUser => ({
+  id: row.id,
+  username: row.username,
+  name: row.name,
+  email: row.email,
+  role: row.role,
+  status: row.status,
+  avatar: row.avatar || undefined,
+  title: row.title || undefined,
+  department: row.department || undefined,
+  createdAt: row.created_at,
+  updatedAt: row.updated_at,
+  lastLoginAt: row.last_login_at || undefined,
+  passwordSalt: row.password_salt,
+  passwordHash: row.password_hash,
+});
 
 const stripSensitiveUser = (user: AuthUser) => {
   const { passwordHash: _passwordHash, passwordSalt: _passwordSalt, ...safe } = user;
@@ -84,6 +81,46 @@ const stripSensitiveUser = (user: AuthUser) => {
     access: user.role,
     userid: user.id,
   };
+};
+
+const selectAuthUserSql = (schemaName: string, whereClause: string) => `
+  select
+    id,
+    username,
+    name,
+    email,
+    role,
+    status,
+    avatar,
+    title,
+    department,
+    ${isoExpr('created_at')} as created_at,
+    ${isoExpr('updated_at')} as updated_at,
+    ${isoExpr('last_login_at')} as last_login_at,
+    password_salt,
+    password_hash
+  from ${schemaName}.managed_user
+  ${whereClause}
+`;
+
+const getAuthUserById = async (req: Request, schema: string, id: string) => {
+  const result = await queryDatabase<AuthUserRow>(
+    req,
+    'auth.userById',
+    selectAuthUserSql(quoteIdentifier(schema), 'where id = $1'),
+    [id],
+  );
+  return result.rows[0] ? mapAuthUser(result.rows[0]) : null;
+};
+
+const getAuthUserByUsername = async (req: Request, schema: string, username: string) => {
+  const result = await queryDatabase<AuthUserRow>(
+    req,
+    'auth.userByUsername',
+    selectAuthUserSql(quoteIdentifier(schema), 'where username = $1'),
+    [username],
+  );
+  return result.rows[0] ? mapAuthUser(result.rows[0]) : null;
 };
 
 const issueSession = (userId: string) => {
@@ -125,7 +162,18 @@ const getSessionFromRequest = (req: Request) => {
   return session;
 };
 
-const requireLogin = (req: Request, res: Response) => {
+const deleteSession = (session: SessionRecord) => {
+  sessionsByToken.delete(session.token);
+  sessionsByRefreshToken.delete(session.refreshToken);
+};
+
+const ensureAuthUserTable = async (req: Request) => {
+  const schema = getDatabaseSchema();
+  await ensureUserTable(req, schema);
+  return schema;
+};
+
+const requireLogin = async (req: Request, res: Response) => {
   const session = getSessionFromRequest(req);
   if (!session) {
     res.status(401).send({
@@ -137,8 +185,10 @@ const requireLogin = (req: Request, res: Response) => {
     return null;
   }
 
-  const user = users.find((item) => item.id === session.userId);
+  const schema = await ensureAuthUserTable(req);
+  const user = await getAuthUserById(req, schema, session.userId);
   if (!user || user.status !== 'active') {
+    deleteSession(session);
     res.status(401).send({
       data: { isLogin: false },
       errorCode: '401',
@@ -151,69 +201,95 @@ const requireLogin = (req: Request, res: Response) => {
   return user;
 };
 
+const handleAuthError = (res: Response, error: unknown) => {
+  res.status(500).send({
+    success: false,
+    errorMessage: error instanceof Error ? error.message : 'Database auth route failed',
+  });
+};
+
 export default {
-  'GET /api/currentUser': (req: Request, res: Response) => {
-    const currentUser = requireLogin(req, res);
-    if (!currentUser) return;
+  'GET /api/currentUser': async (req: Request, res: Response) => {
+    try {
+      const currentUser = await requireLogin(req, res);
+      if (!currentUser) return;
 
-    res.send({
-      success: true,
-      data: {
-        ...stripSensitiveUser(currentUser),
-        notifyCount: 0,
-        unreadCount: 0,
-        country: 'China',
-      },
-    });
-  },
-
-  'POST /api/login/account': (req: Request, res: Response) => {
-    const { password, username, type } = req.body || {};
-    const user = users.find((item) => item.username === String(username || ''));
-
-    if (
-      user &&
-      user.status === 'active' &&
-      hashPassword(String(password || ''), user.passwordSalt) === user.passwordHash
-    ) {
       res.send({
         success: true,
-        status: 'ok',
-        type,
-        currentAuthority: user.role,
-        user: stripSensitiveUser(user),
-        ...issueSession(user.id),
+        data: {
+          ...stripSensitiveUser(currentUser),
+          notifyCount: 0,
+          unreadCount: 0,
+          country: 'China',
+        },
       });
-      return;
+    } catch (error) {
+      handleAuthError(res, error);
     }
-
-    res.send({
-      success: true,
-      status: 'error',
-      type,
-      currentAuthority: 'guest',
-    });
   },
 
-  'POST /api/login/refresh': (req: Request, res: Response) => {
-    const { refreshToken } = req.body || {};
-    const session = sessionsByRefreshToken.get(String(refreshToken || ''));
-    if (!session) {
-      res.status(401).send({ success: false, errorMessage: 'Invalid refresh token' });
-      return;
-    }
+  'POST /api/login/account': async (req: Request, res: Response) => {
+    try {
+      const { password, username, type } = req.body || {};
+      const schema = await ensureAuthUserTable(req);
+      const user = await getAuthUserByUsername(req, schema, String(username || ''));
 
-    const user = users.find((item) => item.id === session.userId);
-    if (!user || user.status !== 'active') {
-      sessionsByToken.delete(session.token);
-      sessionsByRefreshToken.delete(session.refreshToken);
-      res.status(401).send({ success: false, errorMessage: 'Invalid refresh token' });
-      return;
-    }
+      if (
+        user &&
+        user.status === 'active' &&
+        hashPassword(String(password || ''), user.passwordSalt) === user.passwordHash
+      ) {
+        await queryDatabase(
+          req,
+          'auth.updateLastLogin',
+          `update ${quoteIdentifier(schema)}.managed_user set last_login_at = now(), updated_at = now() where id = $1`,
+          [user.id],
+        );
 
-    sessionsByToken.delete(session.token);
-    sessionsByRefreshToken.delete(session.refreshToken);
-    res.send({ success: true, data: issueSession(user.id) });
+        res.send({
+          success: true,
+          status: 'ok',
+          type,
+          currentAuthority: user.role,
+          user: stripSensitiveUser(user),
+          ...issueSession(user.id),
+        });
+        return;
+      }
+
+      res.send({
+        success: true,
+        status: 'error',
+        type,
+        currentAuthority: 'guest',
+      });
+    } catch (error) {
+      handleAuthError(res, error);
+    }
+  },
+
+  'POST /api/login/refresh': async (req: Request, res: Response) => {
+    try {
+      const { refreshToken } = req.body || {};
+      const session = sessionsByRefreshToken.get(String(refreshToken || ''));
+      if (!session) {
+        res.status(401).send({ success: false, errorMessage: 'Invalid refresh token' });
+        return;
+      }
+
+      const schema = await ensureAuthUserTable(req);
+      const user = await getAuthUserById(req, schema, session.userId);
+      if (!user || user.status !== 'active') {
+        deleteSession(session);
+        res.status(401).send({ success: false, errorMessage: 'Invalid refresh token' });
+        return;
+      }
+
+      deleteSession(session);
+      res.send({ success: true, data: issueSession(user.id) });
+    } catch (error) {
+      handleAuthError(res, error);
+    }
   },
 
   'POST /api/login/outLogin': (req: Request, res: Response) => {
@@ -221,8 +297,7 @@ export default {
     if (token) {
       const session = sessionsByToken.get(token);
       if (session) {
-        sessionsByToken.delete(session.token);
-        sessionsByRefreshToken.delete(session.refreshToken);
+        deleteSession(session);
       }
     }
     res.send({ data: {}, success: true });

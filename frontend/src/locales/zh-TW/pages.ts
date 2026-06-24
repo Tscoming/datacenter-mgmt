@@ -8,7 +8,7 @@ export default {
   'pages.login.success': '登錄成功！',
   'pages.login.username.placeholder': '用戶名: admin or user',
   'pages.login.username.required': '用戶名是必填項！',
-  'pages.login.password.placeholder': '密碼: ant.design',
+  'pages.login.password.placeholder': '密碼',
   'pages.login.password.required': '密碼是必填項！',
   'pages.login.phoneLogin.tab': '手機號登錄',
   'pages.login.phoneLogin.errorMessage': '驗證碼錯誤',
