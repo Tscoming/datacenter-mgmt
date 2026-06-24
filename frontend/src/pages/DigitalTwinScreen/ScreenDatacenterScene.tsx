@@ -36,6 +36,7 @@ const statusText: Record<string, string> = {
 const disableRaycast = () => undefined;
 const CABINET_LAYOUT_WIDTH = 0.6;
 const CABINET_LAYOUT_DEPTH = 1.0;
+const AIRFLOW_PARTICLE_COUNT = 72;
 
 const zoneColor = (type: IDC.LayoutZoneType) => {
   if (type === 'hot_aisle') return '#ff3d71';
@@ -80,6 +81,134 @@ const StatusLight: React.FC<{ color: string; alerting: boolean; position: [numbe
         toneMapped={false}
       />
     </mesh>
+  );
+};
+
+const AisleAirflow: React.FC<{ zone: IDC.DatacenterLayoutZoneItem }> = ({ zone }) => {
+  const instancedRef = useRef<THREE.InstancedMesh>(null);
+  const ribbonRefs = useRef<THREE.Mesh[]>([]);
+  const dummy = useMemo(() => new THREE.Object3D(), []);
+  const isHot = zone.type === 'hot_aisle';
+  const color = isHot ? '#ff5a3d' : '#00d9ff';
+  const direction = isHot ? -1 : 1;
+  const flowLength = Math.max(zone.width, 0.1);
+  const flowWidth = Math.max(zone.height, 0.1);
+  const streamCount = Math.max(3, Math.min(7, Math.round(flowWidth * 4)));
+
+  const particleSeeds = useMemo(
+    () =>
+      Array.from({ length: AIRFLOW_PARTICLE_COUNT }, (_, index) => ({
+        lane: index % streamCount,
+        offset: index / AIRFLOW_PARTICLE_COUNT,
+        speed: 0.55 + (index % 9) * 0.045,
+        phase: index * 0.71,
+        scale: 0.026 + (index % 5) * 0.006,
+      })),
+    [streamCount],
+  );
+
+  const streamCurves = useMemo(
+    () =>
+      Array.from({ length: streamCount }, (_, index) => {
+        const laneRatio = streamCount === 1 ? 0.5 : index / (streamCount - 1);
+        const z = -flowWidth / 2 + laneRatio * flowWidth;
+        const phase = index * 0.85;
+        const points = Array.from({ length: 9 }, (_, pointIndex) => {
+          const t = pointIndex / 8;
+          const x = -flowLength / 2 + t * flowLength;
+          return new THREE.Vector3(
+            x,
+            0.2 + Math.sin(t * Math.PI * 2 + phase) * 0.035,
+            z + Math.sin(t * Math.PI * 3 + phase) * Math.min(0.18, flowWidth * 0.13),
+          );
+        });
+        return new THREE.CatmullRomCurve3(points);
+      }),
+    [flowLength, flowWidth, streamCount],
+  );
+
+  useFrame(({ clock }) => {
+    const elapsed = clock.elapsedTime;
+    const mesh = instancedRef.current;
+
+    if (mesh) {
+      particleSeeds.forEach((seed, index) => {
+        const laneRatio = streamCount === 1 ? 0.5 : seed.lane / (streamCount - 1);
+        const progress = (seed.offset + elapsed * seed.speed * 0.16) % 1;
+        const x = direction * (-flowLength / 2 + progress * flowLength);
+        const baseZ = -flowWidth / 2 + laneRatio * flowWidth;
+        const z =
+          baseZ + Math.sin(progress * Math.PI * 4 + seed.phase) * Math.min(0.16, flowWidth * 0.12);
+        const y = 0.18 + Math.sin(elapsed * 2.1 + seed.phase) * 0.055;
+        const pulse = 0.72 + Math.sin(elapsed * 4 + seed.phase) * 0.22;
+
+        dummy.position.set(x, y, z);
+        dummy.scale.setScalar(seed.scale * pulse);
+        dummy.updateMatrix();
+        mesh.setMatrixAt(index, dummy.matrix);
+      });
+      mesh.instanceMatrix.needsUpdate = true;
+    }
+
+    ribbonRefs.current.forEach((ribbon, index) => {
+      const material = ribbon.material as THREE.MeshBasicMaterial;
+      material.opacity = 0.12 + Math.sin(elapsed * 1.6 + index * 0.7) * 0.035;
+    });
+  });
+
+  if (zone.type !== 'cold_aisle' && zone.type !== 'hot_aisle') return null;
+
+  return (
+    <group
+      position={[zone.x + zone.width / 2, 0.035, zone.y + zone.height / 2]}
+      rotation={[0, ((zone.rotation || 0) * Math.PI) / 180, 0]}
+    >
+      {streamCurves.map((curve, index) => (
+        <mesh
+          key={`${zone.id}-stream-${index}`}
+          ref={(node) => {
+            if (node) ribbonRefs.current[index] = node;
+          }}
+        >
+          <tubeGeometry args={[curve, 36, 0.018, 8, false]} />
+          <meshBasicMaterial
+            color={color}
+            transparent
+            opacity={0.12}
+            blending={THREE.AdditiveBlending}
+            depthWrite={false}
+            toneMapped={false}
+          />
+        </mesh>
+      ))}
+
+      <instancedMesh ref={instancedRef} args={[undefined, undefined, AIRFLOW_PARTICLE_COUNT]}>
+        <sphereGeometry args={[1, 10, 10]} />
+        <meshBasicMaterial
+          color={color}
+          transparent
+          opacity={0.74}
+          blending={THREE.AdditiveBlending}
+          depthWrite={false}
+          toneMapped={false}
+        />
+      </instancedMesh>
+
+      <mesh
+        position={[direction * (flowLength / 2 - 0.24), 0.19, 0]}
+        rotation={[0, 0, direction > 0 ? -Math.PI / 2 : Math.PI / 2]}
+      >
+        <coneGeometry args={[0.12, 0.32, 18]} />
+        <meshBasicMaterial
+          color={color}
+          transparent
+          opacity={0.82}
+          blending={THREE.AdditiveBlending}
+          depthWrite={false}
+          toneMapped={false}
+        />
+      </mesh>
+    </group>
   );
 };
 
@@ -527,23 +656,25 @@ export const ScreenDatacenterScene: React.FC<ScreenDatacenterSceneProps> = ({
       {(layout.zones || []).map((zone) => {
         const color = zoneColor(zone.type);
         return (
-          <mesh
-            key={zone.id}
-            rotation={[-Math.PI / 2, ((zone.rotation || 0) * Math.PI) / 180, 0]}
-            position={[zone.x + zone.width / 2, -0.014, zone.y + zone.height / 2]}
-            receiveShadow
-          >
-            <planeGeometry args={[zone.width, zone.height]} />
-            <meshStandardMaterial
-              color={color}
-              emissive={color}
-              emissiveIntensity={0.18}
-              transparent
-              opacity={0.28}
-              metalness={0}
-              roughness={0.8}
-            />
-          </mesh>
+          <group key={zone.id}>
+            <mesh
+              rotation={[-Math.PI / 2, ((zone.rotation || 0) * Math.PI) / 180, 0]}
+              position={[zone.x + zone.width / 2, -0.014, zone.y + zone.height / 2]}
+              receiveShadow
+            >
+              <planeGeometry args={[zone.width, zone.height]} />
+              <meshStandardMaterial
+                color={color}
+                emissive={color}
+                emissiveIntensity={0.18}
+                transparent
+                opacity={0.28}
+                metalness={0}
+                roughness={0.8}
+              />
+            </mesh>
+            <AisleAirflow zone={zone} />
+          </group>
         );
       })}
 
