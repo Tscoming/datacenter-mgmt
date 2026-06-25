@@ -5,6 +5,7 @@ import { history, useSearchParams } from '@umijs/max';
 import {
   Card,
   Col,
+  Descriptions,
   Divider,
   Empty,
   Progress,
@@ -252,10 +253,8 @@ interface CabinetScene3DProps {
   devicePorts: Record<string, IDC.Port[]>;
   selectedDevice: IDC.Device | null;
   cabinetRotationY: number;
-  deviceRotationY: number;
   onDeviceSelect: (device: IDC.Device | null) => void;
   onCabinetRotationChange: (rotation: number) => void;
-  onDeviceRotationChange: (rotation: number) => void;
 }
 
 const CabinetScene3D: React.FC<CabinetScene3DProps> = ({
@@ -265,10 +264,8 @@ const CabinetScene3D: React.FC<CabinetScene3DProps> = ({
   devicePorts,
   selectedDevice,
   cabinetRotationY,
-  deviceRotationY,
   onDeviceSelect,
   onCabinetRotationChange,
-  onDeviceRotationChange,
 }) => {
   // 机柜尺寸
   const cabinetWidth = 0.6 * DISPLAY_SCALE;
@@ -493,51 +490,80 @@ const CabinetScene3D: React.FC<CabinetScene3DProps> = ({
         <planeGeometry args={[cabinetWidth * 4, cabinetDepth * 4]} />
         <meshStandardMaterial color="#e2e8f0" />
       </mesh>
-
-      {/* 选中设备的放大3D展示 - 可拖拽旋转 */}
-      {selectedDevice &&
-        (() => {
-          const template = templates.find(
-            (t) => t.id === selectedDevice.templateId,
-          );
-          const category = template?.category || 'other';
-
-          return (
-            <group position={[cabinetWidth + 0.8, cabinetHeight * 0.5, 0]}>
-              {/* 展示台 */}
-              <mesh position={[0, -0.12, 0]}>
-                <cylinderGeometry args={[0.35, 0.4, 0.08, 32]} />
-                <meshStandardMaterial
-                  color="#cbd5e0"
-                  metalness={0.3}
-                  roughness={0.5}
-                />
-              </mesh>
-
-              {/* 放大的设备模型 - 可拖动旋转 */}
-              <DraggableRotatableGroup
-                rotationY={deviceRotationY}
-                onRotationChange={onDeviceRotationChange}
-                pivotY={0}
-              >
-                <Device3D
-                  device={selectedDevice}
-                  template={template}
-                  ports={devicePorts[selectedDevice.id]}
-                  category={category}
-                  position={[0, 0, 0]}
-                  height={0.25}
-                  width={0.5}
-                  depth={0.3}
-                  selected={true}
-                  showRear={Math.abs(deviceRotationY) > Math.PI / 2}
-                  showTooltip={false}
-                />
-              </DraggableRotatableGroup>
-            </group>
-          );
-        })()}
     </>
+  );
+};
+
+const DEVICE_FIELD_LABELS: Record<string, string> = {
+  id: '设备ID',
+  templateId: '模板ID',
+  cabinetId: '机柜ID',
+  assetCode: '资产编码',
+  name: '设备名称',
+  serialNumber: '序列号',
+  startU: '起始U位',
+  endU: '结束U位',
+  managementIp: '管理IP',
+  status: '运行状态',
+  purchaseDate: '采购日期',
+  warrantyExpiry: '质保到期',
+  vendor: '供应商',
+  owner: '负责人',
+  department: '所属部门',
+  isMounted: '是否已上架',
+  description: '描述',
+  createdAt: '创建时间',
+  updatedAt: '更新时间',
+};
+
+const DEVICE_FIELD_ORDER = Object.keys(DEVICE_FIELD_LABELS);
+
+const formatDeviceValue = (value: unknown) => {
+  if (value === undefined || value === null || value === '') {
+    return '-';
+  }
+  if (typeof value === 'boolean') {
+    return value ? '是' : '否';
+  }
+  if (typeof value === 'object') {
+    return JSON.stringify(value);
+  }
+  return String(value);
+};
+
+interface DevicePropertiesPanelProps {
+  device: IDC.Device | null;
+}
+
+const DevicePropertiesPanel: React.FC<DevicePropertiesPanelProps> = ({
+  device,
+}) => {
+  if (!device) {
+    return null;
+  }
+
+  const fields = [
+    ...DEVICE_FIELD_ORDER,
+    ...Object.keys(device).filter((key) => !DEVICE_FIELD_LABELS[key]),
+  ];
+
+  return (
+    <Card
+      className={styles.devicePanel}
+      title={<span className={styles.deviceTitle}>设备属性</span>}
+      size="small"
+    >
+      <Descriptions column={1} size="small" bordered>
+        {fields.map((field) => (
+          <Descriptions.Item
+            key={field}
+            label={DEVICE_FIELD_LABELS[field] || field}
+          >
+            {formatDeviceValue(device[field as keyof IDC.Device])}
+          </Descriptions.Item>
+        ))}
+      </Descriptions>
+    </Card>
   );
 };
 
@@ -555,7 +581,6 @@ const Cabinet3DPage: React.FC = () => {
     {},
   );
   const [cabinetRotationY, setCabinetRotationY] = useState(0);
-  const [deviceRotationY, setDeviceRotationY] = useState(0);
 
   // 加载数据
   useEffect(() => {
@@ -726,16 +751,15 @@ const Cabinet3DPage: React.FC = () => {
                       devicePorts={devicePorts}
                       selectedDevice={selectedDevice}
                       cabinetRotationY={cabinetRotationY}
-                      deviceRotationY={deviceRotationY}
                       onDeviceSelect={setSelectedDevice}
                       onCabinetRotationChange={setCabinetRotationY}
-                      onDeviceRotationChange={setDeviceRotationY}
                     />
                   </Suspense>
                 </Canvas>
                 <div className={styles.hint}>
-                  左侧机柜和右侧设备可独立拖动旋转
+                  拖动旋转机柜，点击设备查看属性
                 </div>
+                <DevicePropertiesPanel device={selectedDevice} />
               </div>
             </Card>
           </div>

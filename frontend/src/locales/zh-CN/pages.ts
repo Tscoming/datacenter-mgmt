@@ -1,9 +1,8 @@
 export default {
   'pages.layouts.userLayout.title':
-    '定义 3D 可视化数据中心数字孪生运维新标准',
+    '以数字孪生驱动基础设施运维，为运维人员提供可视化管理平台',
   'pages.login.accountLogin.tab': '账户密码登录',
-  'pages.login.accountLogin.errorMessage':
-    '错误的用户名和密码',
+  'pages.login.accountLogin.errorMessage': '错误的用户名和密码',
   'pages.login.failure': '登录失败，请重试！',
   'pages.login.success': '登录成功！',
   'pages.login.username.placeholder': '用户名: admin or user',

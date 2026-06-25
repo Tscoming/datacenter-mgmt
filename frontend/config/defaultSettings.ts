@@ -15,7 +15,7 @@ const Settings: ProLayoutProps & {
   fixedHeader: false,
   fixSiderbar: true,
   colorWeak: false,
-  title: '数据中心数字孪生管理系统',
+  title: '基础设施数字孪生系统',
   pwa: true,
   logo: '/logo.svg',
   iconfontUrl: '',
