@@ -237,6 +237,12 @@ const DevicePage: React.FC = () => {
   const [mountValidation, setMountValidation] =
     useState<IDC.DeviceMountValidationResult | null>(null);
   const [mountValidationLoading, setMountValidationLoading] = useState(false);
+  const [editSelectedCabinetId, setEditSelectedCabinetId] = useState<string>();
+  const [editSelectedStartU, setEditSelectedStartU] = useState<number>();
+  const [editCabinetSlots, setEditCabinetSlots] = useState<
+    { u: number; occupied: boolean; deviceName?: string }[]
+  >([]);
+  const [editCabinetSlotsLoading, setEditCabinetSlotsLoading] = useState(false);
 
   // 端口详情视图状态
   const [portViewOpen, setPortViewOpen] = useState(false);
@@ -258,6 +264,22 @@ const DevicePage: React.FC = () => {
   const selectedCabinet = useMemo(() => {
     return cabinets.find((c) => c.id === selectedCabinetId);
   }, [selectedCabinetId, cabinets]);
+
+  const editSelectedCabinet = useMemo(() => {
+    return cabinets.find((c) => c.id === editSelectedCabinetId);
+  }, [editSelectedCabinetId, cabinets]);
+
+  const editSelectedTemplate = useMemo(() => {
+    return templates.find((t) => t.id === currentRow?.templateId);
+  }, [currentRow?.templateId, templates]);
+
+  const editDeviceUHeight = useMemo(() => {
+    if (editSelectedTemplate?.uHeight) return editSelectedTemplate.uHeight;
+    if (currentRow?.startU && currentRow?.endU) {
+      return currentRow.endU - currentRow.startU + 1;
+    }
+    return 1;
+  }, [currentRow, editSelectedTemplate]);
 
   useEffect(() => {
     if (!selectedCabinetId) {
@@ -283,6 +305,30 @@ const DevicePage: React.FC = () => {
       })
       .finally(() => setCabinetSlotsLoading(false));
   }, [selectedCabinetId]);
+
+  useEffect(() => {
+    if (!editSelectedCabinetId || !currentRow) {
+      setEditCabinetSlots([]);
+      return;
+    }
+    setEditCabinetSlotsLoading(true);
+    getCabinetUUsage(editSelectedCabinetId)
+      .then((res) => {
+        if (res.success && res.data) {
+          const slots = res.data.uSlots || [];
+          setEditCabinetSlots(
+            slots.map((s: any) => ({
+              u: s.u,
+              occupied: !!s.deviceId && s.deviceId !== currentRow.id,
+              deviceName: s.deviceName,
+            })),
+          );
+        } else {
+          setEditCabinetSlots([]);
+        }
+      })
+      .finally(() => setEditCabinetSlotsLoading(false));
+  }, [editSelectedCabinetId, currentRow]);
 
   const deviceMaxPower = useMemo(() => {
     if (selectedTemplate?.maxPower) return selectedTemplate.maxPower;
@@ -433,12 +479,53 @@ const DevicePage: React.FC = () => {
     totalPortCount,
   ]);
 
+  const editValidationSummary = useMemo(() => {
+    if (!editSelectedCabinet || !currentRow) return null;
+    const startU = editSelectedStartU;
+    const endU = startU ? startU + editDeviceUHeight - 1 : undefined;
+    const errors: string[] = [];
+    const warnings: string[] = [];
+
+    if (startU && endU) {
+      if (endU > editSelectedCabinet.uHeight) {
+        errors.push('U位超出机柜高度');
+      } else {
+        const occupied = editCabinetSlots.some(
+          (s) => s.occupied && s.u >= startU && s.u <= endU,
+        );
+        if (occupied) errors.push('所选U位区间存在占用冲突');
+      }
+    } else {
+      errors.push('请选择起始U位');
+    }
+
+    const maxPower = editSelectedCabinet.maxPower || 0;
+    const currentPower = editSelectedCabinet.currentPower || 0;
+    if (maxPower && currentPower / maxPower >= 0.8) {
+      warnings.push('目标机柜功率负载较高，建议确认供电和散热余量');
+    }
+
+    return { errors, warnings, startU, endU };
+  }, [
+    currentRow,
+    editCabinetSlots,
+    editDeviceUHeight,
+    editSelectedCabinet,
+    editSelectedStartU,
+  ]);
+
   const resetCreateForm = () => {
     setSelectedTemplateId(undefined);
     setSelectedCabinetId(undefined);
     setSelectedStartU(undefined);
     setCabinetSlots([]);
     setMountValidation(null);
+  };
+
+  const resetEditForm = (record?: IDC.Device) => {
+    setEditSelectedCabinetId(record?.cabinetId);
+    setEditSelectedStartU(record?.startU);
+    setEditCabinetSlots([]);
   };
 
   const columns: ProColumns<IDC.Device>[] = [
@@ -636,6 +723,7 @@ const DevicePage: React.FC = () => {
           icon={<Edit3 size={14} />}
           onClick={() => {
             setCurrentRow(record);
+            resetEditForm(record);
             setEditModalOpen(true);
           }}
         >
@@ -935,12 +1023,33 @@ const DevicePage: React.FC = () => {
       <ModalForm
         title="编辑设备"
         open={editModalOpen}
-        onOpenChange={setEditModalOpen}
-        width={700}
+        onOpenChange={(open) => {
+          setEditModalOpen(open);
+          if (!open) resetEditForm();
+        }}
+        key={currentRow?.id}
+        width={800}
         initialValues={currentRow}
         onFinish={async (values) => {
           if (!currentRow) return false;
-          const res = await updateDevice(currentRow.id, values);
+          if (editCabinetSlotsLoading) {
+            message.warning('正在加载U位信息，请稍后');
+            return false;
+          }
+          if (!editSelectedCabinetId || !editSelectedStartU) {
+            message.error('请选择目标机柜和起始U位');
+            return false;
+          }
+          if (editValidationSummary?.errors.length) {
+            message.error('容量校验未通过，请调整上架位置或目标机柜');
+            return false;
+          }
+          const res = await updateDevice(currentRow.id, {
+            ...values,
+            cabinetId: editSelectedCabinetId,
+            startU: editSelectedStartU,
+            endU: editSelectedStartU + editDeviceUHeight - 1,
+          });
           if (res.success) {
             message.success('更新成功');
             actionRef.current?.reload();
@@ -959,6 +1068,79 @@ const DevicePage: React.FC = () => {
           label="资产编码"
           rules={[{ required: true }]}
         />
+        <ProFormSelect
+          name="cabinetId"
+          label="所在机柜"
+          options={cabinets.map((c) => ({
+            value: c.id,
+            label: `${c.name} (${c.code}) - 剩余${(c.uHeight || 42) - (c.usedU || 0)}U`,
+          }))}
+          showSearch
+          rules={[{ required: true, message: '请选择所在机柜' }]}
+          fieldProps={{
+            onChange: (value: string) => {
+              setEditSelectedCabinetId(value);
+              setEditSelectedStartU(undefined);
+            },
+          }}
+        />
+        {editSelectedCabinetId && currentRow && (
+          <div style={{ marginBottom: 24 }}>
+            <div style={{ marginBottom: 8, fontWeight: 500 }}>
+              选择起始U位 <span style={{ color: '#f5222d' }}>*</span>
+            </div>
+            <USlotSelector
+              cabinetId={editSelectedCabinetId}
+              uHeight={editSelectedCabinet?.uHeight || 42}
+              deviceUHeight={editDeviceUHeight}
+              selectedStartU={editSelectedStartU}
+              onSelect={setEditSelectedStartU}
+              uUsage={editCabinetSlots}
+              loading={editCabinetSlotsLoading}
+            />
+          </div>
+        )}
+        {editSelectedCabinetId && (
+          <div style={{ marginBottom: 24 }}>
+            <div style={{ marginBottom: 8, fontWeight: 500 }}>容量校验</div>
+            {editCabinetSlotsLoading && <div>校验中...</div>}
+            {!editCabinetSlotsLoading && (
+              <>
+                {editValidationSummary?.errors?.length ? (
+                  <Alert
+                    type="error"
+                    showIcon
+                    message="校验未通过"
+                    description={
+                      <div>
+                        {editValidationSummary.errors.map((e) => (
+                          <div key={e}>{e}</div>
+                        ))}
+                      </div>
+                    }
+                  />
+                ) : (
+                  <Alert type="success" showIcon message="基础容量校验通过" />
+                )}
+                {editValidationSummary?.warnings?.length ? (
+                  <Alert
+                    style={{ marginTop: 8 }}
+                    type="warning"
+                    showIcon
+                    message="建议关注项"
+                    description={
+                      <div>
+                        {editValidationSummary.warnings.map((w) => (
+                          <div key={w}>{w}</div>
+                        ))}
+                      </div>
+                    }
+                  />
+                ) : null}
+              </>
+            )}
+          </div>
+        )}
         <ProFormText name="serialNumber" label="序列号" />
         <ProFormText name="managementIp" label="管理IP" />
         <ProFormSelect

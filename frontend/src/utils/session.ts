@@ -82,7 +82,13 @@ async function refreshSession(refreshToken: string): Promise<Session | null> {
       body: JSON.stringify({ refreshToken }),
     });
 
-    if (!res.ok) return null;
+    if (!res.ok) {
+      if (res.status === 401 || res.status === 403) {
+        clearSession();
+        redirectToLogin();
+      }
+      return null;
+    }
     const json = await res.json();
     const data = json?.data;
     if (!json?.success || !data?.token || !data?.expiresAt) return null;
