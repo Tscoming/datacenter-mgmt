@@ -195,6 +195,123 @@ const getCabinetUsageRank = async (req: Request, schema: string, limit: number) 
   }));
 };
 
+const categoryMeta: Record<string, { label: string; color: string }> = {
+  switch: { label: '交换机', color: '#1890ff' },
+  router: { label: '路由器', color: '#13c2c2' },
+  server: { label: '服务器', color: '#52c41a' },
+  storage: { label: '存储', color: '#faad14' },
+  firewall: { label: '防火墙', color: '#f5222d' },
+  loadbalancer: { label: '负载均衡', color: '#722ed1' },
+  other: { label: '其他', color: '#8c8c8c' },
+};
+
+const getDeviceCategory = async (req: Request, schema: string) => {
+  const snapshot = await getSnapshotPayload<any[]>(req, schema, 'device_category');
+  if (Array.isArray(snapshot) && snapshot.length > 0) {
+    return snapshot.map((item) => ({
+      category: String(item.category || 'other'),
+      label: String(item.label || categoryMeta[String(item.category)]?.label || item.category || '其他'),
+      count: toNumber(item.count),
+      color: String(item.color || categoryMeta[String(item.category)]?.color || categoryMeta.other.color),
+    }));
+  }
+
+  const schemaName = quoteIdentifier(schema);
+  const result = await queryDatabase<any>(
+    req,
+    'dashboard.device_category.aggregate',
+    `
+      select
+        coalesce(dt.category, 'other') as category,
+        count(*)::int as count
+      from ${schemaName}.device d
+      left join ${schemaName}.device_template dt on dt.id = d.template_id
+      group by coalesce(dt.category, 'other')
+      order by count desc, category
+    `,
+  );
+
+  return result.rows.map((row) => {
+    const category = row.category || 'other';
+    return {
+      category,
+      label: categoryMeta[category]?.label || category,
+      count: toNumber(row.count),
+      color: categoryMeta[category]?.color || categoryMeta.other.color,
+    };
+  });
+};
+
+const getDatacenterLoad = async (req: Request, schema: string) => {
+  const snapshot = await getSnapshotPayload<any[]>(req, schema, 'datacenter_load');
+  if (Array.isArray(snapshot) && snapshot.length > 0) {
+    return snapshot.map((item) => ({
+      datacenterId: String(item.datacenterId || ''),
+      name: String(item.name || ''),
+      cabinetUsage: round(item.cabinetUsage, 2),
+      powerUsage: round(item.powerUsage, 2),
+      deviceCount: toNumber(item.deviceCount),
+    }));
+  }
+
+  const schemaName = quoteIdentifier(schema);
+  const result = await queryDatabase<any>(
+    req,
+    'dashboard.datacenter_load.aggregate',
+    `
+      with cabinet_usage as (
+        select
+          c.datacenter_id,
+          count(c.id)::numeric as cabinet_count,
+          count(distinct ri.cabinet_id)::numeric as used_cabinets,
+          coalesce(sum(c.max_power_w), 0)::numeric as max_power_w
+        from ${schemaName}.cabinet c
+        left join ${schemaName}.rack_installation ri on ri.cabinet_id = c.id and ri.valid_to is null
+        group by c.datacenter_id
+      ),
+      device_usage as (
+        select
+          c.datacenter_id,
+          count(distinct d.id)::int as device_count
+        from ${schemaName}.device d
+        join ${schemaName}.rack_installation ri
+          on ri.device_id = d.id
+          and ri.asset_type = 'device'
+          and ri.valid_to is null
+        join ${schemaName}.cabinet c on c.id = ri.cabinet_id
+        group by c.datacenter_id
+      ),
+      power_usage as (
+        select
+          c.datacenter_id,
+          coalesce(sum(p.current_load_w), 0)::numeric as current_power_w
+        from ${schemaName}.cabinet c
+        left join ${schemaName}.pdu p on p.cabinet_id = c.id
+        group by c.datacenter_id
+      )
+      select
+        dc.id as datacenter_id,
+        dc.name,
+        coalesce(cu.used_cabinets / nullif(cu.cabinet_count, 0), 0) as cabinet_usage,
+        coalesce(pu.current_power_w / nullif(cu.max_power_w, 0), 0) as power_usage,
+        coalesce(du.device_count, 0) as device_count
+      from ${schemaName}.datacenter dc
+      left join cabinet_usage cu on cu.datacenter_id = dc.id
+      left join device_usage du on du.datacenter_id = dc.id
+      left join power_usage pu on pu.datacenter_id = dc.id
+      order by dc.id
+    `,
+  );
+
+  return result.rows.map((row) => ({
+    datacenterId: row.datacenter_id,
+    name: row.name,
+    cabinetUsage: round(row.cabinet_usage, 2),
+    powerUsage: round(row.power_usage, 2),
+    deviceCount: toNumber(row.device_count),
+  }));
+};
+
 const getRecentOperations = async (req: Request, schema: string, limit: number) => {
   const schemaName = quoteIdentifier(schema);
   const result = await queryDatabase<any>(
@@ -271,6 +388,30 @@ export default {
     }
   },
 
+  'GET /api/idc/dashboard/device-category': async (req: Request, res: Response) => {
+    try {
+      const schema = getDatabaseSchema();
+      logRequestStep(req, 'db:schema', schema);
+      const data = await getDeviceCategory(req, schema);
+      logDataCount(req, 'dashboard.device_category', data);
+      res.json({ success: true, data });
+    } catch (error) {
+      handleError(res, error);
+    }
+  },
+
+  'GET /api/idc/dashboard/datacenter-load': async (req: Request, res: Response) => {
+    try {
+      const schema = getDatabaseSchema();
+      logRequestStep(req, 'db:schema', schema);
+      const data = await getDatacenterLoad(req, schema);
+      logDataCount(req, 'dashboard.datacenter_load', data);
+      res.json({ success: true, data });
+    } catch (error) {
+      handleError(res, error);
+    }
+  },
+
   'GET /api/idc/dashboard/recent-operations': async (req: Request, res: Response) => {
     try {
       const schema = getDatabaseSchema();
@@ -284,7 +425,7 @@ export default {
     }
   },
 
-  'POST /api/idc/alerts/:id/acknowledge': async (req: Request, res: Response) => {
+  'POST /api/idc/dashboard/alerts/:id/acknowledge': async (req: Request, res: Response) => {
     try {
       const schema = getDatabaseSchema();
       const schemaName = quoteIdentifier(schema);

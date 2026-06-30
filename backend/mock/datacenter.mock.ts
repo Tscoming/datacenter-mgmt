@@ -1,4 +1,5 @@
 import type { Request, Response } from 'express';
+import { getCabinetSnapshots } from './cabinet.mock';
 import { uuidv4 } from './utils';
 
 // Mock 数据存储
@@ -73,6 +74,18 @@ const waitTime = (time: number = 100) => {
     });
 };
 
+const getDatacenterSnapshot = (datacenter: IDC.Datacenter): IDC.Datacenter => {
+    const cabinets = getCabinetSnapshots().filter(c => c.datacenterId === datacenter.id);
+
+    return {
+        ...datacenter,
+        totalCabinets: cabinets.length,
+        usedCabinets: cabinets.filter(c => c.usedU > 0).length,
+    };
+};
+
+const getDatacenterSnapshots = () => datacenters.map(getDatacenterSnapshot);
+
 export default {
     // 获取所有数据中心（用于下拉选择）- 必须放在 /:id 之前
     'GET /api/idc/datacenters/all': async (_req: Request, res: Response) => {
@@ -88,7 +101,7 @@ export default {
         await waitTime(300);
         const { current = 1, pageSize = 10, name, status, code } = req.query;
 
-        let filteredData = [...datacenters];
+        let filteredData = getDatacenterSnapshots();
 
         if (name) {
             filteredData = filteredData.filter(d => d.name.includes(name as string));
@@ -120,7 +133,7 @@ export default {
         const datacenter = datacenters.find(d => d.id === id);
 
         if (datacenter) {
-            res.json({ success: true, data: datacenter });
+            res.json({ success: true, data: getDatacenterSnapshot(datacenter) });
         } else {
             res.status(404).json({ success: false, errorMessage: '数据中心不存在' });
         }
@@ -169,7 +182,7 @@ export default {
             updatedAt: new Date().toISOString(),
         };
 
-        res.json({ success: true, data: datacenters[index] });
+        res.json({ success: true, data: getDatacenterSnapshot(datacenters[index]) });
     },
 
     // 删除数据中心

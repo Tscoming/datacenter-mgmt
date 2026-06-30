@@ -1,7 +1,7 @@
 import type { Request, Response } from 'express';
 
 // PDU设备Mock数据
-const pduDevices = [
+export const pduDevices = [
     {
         id: 'pdu-001',
         name: 'PDU-A-01',

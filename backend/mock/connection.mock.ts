@@ -3,7 +3,7 @@ import { devicesData } from './device.mock';
 import { uuidv4 } from './utils';
 
 // Mock 连线数据
-let connections: IDC.Connection[] = [
+export let connectionsData: IDC.Connection[] = [
     // 核心交换机到接入交换机
     {
         id: 'conn-001',
@@ -208,7 +208,7 @@ export default {
             cableNumber,
         } = req.query;
 
-        let filteredData = [...connections];
+        let filteredData = [...connectionsData];
 
         if (connectionType) {
             filteredData = filteredData.filter(c => c.connectionType === connectionType);
@@ -246,7 +246,7 @@ export default {
     'GET /api/idc/connections/:id': async (req: Request, res: Response) => {
         await waitTime(200);
         const { id } = req.params;
-        const connection = connections.find(c => c.id === id);
+        const connection = connectionsData.find(c => c.id === id);
 
         if (connection) {
             res.json({ success: true, data: connection });
@@ -277,7 +277,7 @@ export default {
             updatedAt: new Date().toISOString(),
         };
 
-        connections.push(newConnection);
+        connectionsData.push(newConnection);
         res.json({ success: true, data: newConnection });
     },
 
@@ -287,19 +287,19 @@ export default {
         const { id } = req.params;
         const body = req.body;
 
-        const index = connections.findIndex(c => c.id === id);
+        const index = connectionsData.findIndex(c => c.id === id);
         if (index === -1) {
             res.status(404).json({ success: false, errorMessage: '连线不存在' });
             return;
         }
 
-        connections[index] = {
-            ...connections[index],
+        connectionsData[index] = {
+            ...connectionsData[index],
             ...body,
             updatedAt: new Date().toISOString(),
         };
 
-        res.json({ success: true, data: connections[index] });
+        res.json({ success: true, data: connectionsData[index] });
     },
 
     // 删除连线
@@ -307,13 +307,13 @@ export default {
         await waitTime(300);
         const { id } = req.params;
 
-        const index = connections.findIndex(c => c.id === id);
+        const index = connectionsData.findIndex(c => c.id === id);
         if (index === -1) {
             res.status(404).json({ success: false, errorMessage: '连线不存在' });
             return;
         }
 
-        connections.splice(index, 1);
+        connectionsData.splice(index, 1);
         res.json({ success: true });
     },
 
@@ -321,7 +321,7 @@ export default {
     'GET /api/idc/connections/by-device/:deviceId': async (req: Request, res: Response) => {
         await waitTime(200);
         const { deviceId } = req.params;
-        const deviceConnections = connections.filter(
+        const deviceConnections = connectionsData.filter(
             c => c.sourceDeviceId === deviceId || c.targetDeviceId === deviceId
         );
 
@@ -335,7 +335,7 @@ export default {
     'GET /api/idc/connections/by-datacenter/:datacenterId': async (req: Request, res: Response) => {
         await waitTime(300);
         const { datacenterId } = req.params;
-        const dcConnections = connections.filter(c =>
+        const dcConnections = connectionsData.filter(c =>
             getDeviceDatacenterId(c.sourceDeviceId) === datacenterId ||
             getDeviceDatacenterId(c.targetDeviceId) === datacenterId
         );
@@ -385,15 +385,15 @@ export default {
         await waitTime(200);
 
         const stats = {
-            total: connections.length,
-            active: connections.filter(c => c.status === 'active').length,
-            inactive: connections.filter(c => c.status === 'inactive').length,
-            faulty: connections.filter(c => c.status === 'faulty').length,
+            total: connectionsData.length,
+            active: connectionsData.filter(c => c.status === 'active').length,
+            inactive: connectionsData.filter(c => c.status === 'inactive').length,
+            faulty: connectionsData.filter(c => c.status === 'faulty').length,
             byType: {} as Record<string, number>,
             byCableType: {} as Record<string, number>,
         };
 
-        connections.forEach(c => {
+        connectionsData.forEach(c => {
             stats.byType[c.connectionType] = (stats.byType[c.connectionType] || 0) + 1;
             stats.byCableType[c.cableType] = (stats.byCableType[c.cableType] || 0) + 1;
         });

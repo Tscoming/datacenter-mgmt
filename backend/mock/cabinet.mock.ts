@@ -1,9 +1,10 @@
 import type { Request, Response } from 'express';
 import { devicesData } from './device.mock';
+import { pduDevices } from './pdu.mock';
 import { uuidv4 } from './utils';
 
 // Mock 机柜数据
-const cabinets: IDC.Cabinet[] = [
+export const cabinetsData: IDC.Cabinet[] = [
     // 北京亦庄数据中心机柜
     ...Array.from({ length: 20 }, (_, i) => ({
         id: `cab-bj-${String(i + 1).padStart(3, '0')}`,
@@ -86,13 +87,40 @@ const waitTime = (time: number = 100) => {
     });
 };
 
+const getCabinetUsedU = (cabinetId: string) => {
+    const deviceUsedU = devicesData
+        .filter(d => d.cabinetId === cabinetId && d.isMounted !== false)
+        .reduce((sum, d) => sum + Math.max(0, d.endU - d.startU + 1), 0);
+    const pduUsedU = pduDevices
+        .filter(pdu => pdu.cabinetId === cabinetId)
+        .reduce((sum, pdu) => sum + Math.max(0, pdu.endU - pdu.startU + 1), 0);
+
+    return deviceUsedU + pduUsedU;
+};
+
+const getCabinetCurrentPower = (cabinet: IDC.Cabinet) => {
+    const pduLoad = pduDevices
+        .filter(pdu => pdu.cabinetId === cabinet.id)
+        .reduce((sum, pdu) => sum + (pdu.pduData.currentLoad || 0), 0);
+
+    return pduLoad || cabinet.currentPower;
+};
+
+export const getCabinetSnapshot = (cabinet: IDC.Cabinet): IDC.Cabinet => ({
+    ...cabinet,
+    usedU: getCabinetUsedU(cabinet.id),
+    currentPower: getCabinetCurrentPower(cabinet),
+});
+
+export const getCabinetSnapshots = () => cabinetsData.map(getCabinetSnapshot);
+
 export default {
     // 获取机柜列表
     'GET /api/idc/cabinets': async (req: Request, res: Response) => {
         await waitTime(300);
         const { current = 1, pageSize = 10, datacenterId, name, status, code } = req.query;
 
-        let filteredData = [...cabinets];
+        let filteredData = getCabinetSnapshots();
 
         if (datacenterId) {
             filteredData = filteredData.filter(c => c.datacenterId === datacenterId);
@@ -124,10 +152,10 @@ export default {
     'GET /api/idc/cabinets/:id': async (req: Request, res: Response) => {
         await waitTime(200);
         const { id } = req.params;
-        const cabinet = cabinets.find(c => c.id === id);
+        const cabinet = cabinetsData.find(c => c.id === id);
 
         if (cabinet) {
-            res.json({ success: true, data: cabinet });
+            res.json({ success: true, data: getCabinetSnapshot(cabinet) });
         } else {
             res.status(404).json({ success: false, errorMessage: '机柜不存在' });
         }
@@ -156,7 +184,7 @@ export default {
             updatedAt: new Date().toISOString(),
         };
 
-        cabinets.push(newCabinet);
+        cabinetsData.push(newCabinet);
         res.json({ success: true, data: newCabinet });
     },
 
@@ -166,19 +194,19 @@ export default {
         const { id } = req.params;
         const body = req.body;
 
-        const index = cabinets.findIndex(c => c.id === id);
+        const index = cabinetsData.findIndex(c => c.id === id);
         if (index === -1) {
             res.status(404).json({ success: false, errorMessage: '机柜不存在' });
             return;
         }
 
-        cabinets[index] = {
-            ...cabinets[index],
+        cabinetsData[index] = {
+            ...cabinetsData[index],
             ...body,
             updatedAt: new Date().toISOString(),
         };
 
-        res.json({ success: true, data: cabinets[index] });
+        res.json({ success: true, data: getCabinetSnapshot(cabinetsData[index]) });
     },
 
     // 删除机柜
@@ -186,13 +214,13 @@ export default {
         await waitTime(300);
         const { id } = req.params;
 
-        const index = cabinets.findIndex(c => c.id === id);
+        const index = cabinetsData.findIndex(c => c.id === id);
         if (index === -1) {
             res.status(404).json({ success: false, errorMessage: '机柜不存在' });
             return;
         }
 
-        cabinets.splice(index, 1);
+        cabinetsData.splice(index, 1);
         res.json({ success: true });
     },
 
@@ -200,7 +228,7 @@ export default {
     'GET /api/idc/cabinets/by-datacenter/:datacenterId': async (req: Request, res: Response) => {
         await waitTime(200);
         const { datacenterId } = req.params;
-        const dcCabinets = cabinets.filter(c => c.datacenterId === datacenterId);
+        const dcCabinets = getCabinetSnapshots().filter(c => c.datacenterId === datacenterId);
 
         res.json({
             success: true,
@@ -212,7 +240,7 @@ export default {
     'GET /api/idc/cabinets/:id/u-usage': async (req: Request, res: Response) => {
         await waitTime(200);
         const { id } = req.params;
-        const cabinet = cabinets.find(c => c.id === id);
+        const cabinet = cabinetsData.find(c => c.id === id);
 
         if (!cabinet) {
             res.status(404).json({ success: false, errorMessage: '机柜不存在' });
@@ -225,7 +253,7 @@ export default {
             deviceName: null as string | null,
         }));
 
-        const cabinetDevices = devicesData.filter(d => d.cabinetId === id);
+        const cabinetDevices = devicesData.filter(d => d.cabinetId === id && d.isMounted !== false);
         cabinetDevices.forEach(d => {
             for (let u = d.startU; u <= d.endU; u++) {
                 const slot = uSlots[u - 1];
@@ -234,6 +262,17 @@ export default {
                 slot.deviceName = d.name;
             }
         });
+
+        pduDevices
+            .filter(pdu => pdu.cabinetId === id)
+            .forEach((pdu) => {
+                for (let u = pdu.startU; u <= pdu.endU; u++) {
+                    const slot = uSlots[u - 1];
+                    if (!slot) continue;
+                    slot.deviceId = pdu.id;
+                    slot.deviceName = pdu.name;
+                }
+            });
 
         const usedU = uSlots.filter(s => s.deviceId).length;
 
