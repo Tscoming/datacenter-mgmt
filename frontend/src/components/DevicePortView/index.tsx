@@ -1,7 +1,7 @@
 import React, { useMemo, useEffect, useState } from 'react';
-import { Modal, Tag, Tooltip, Empty, Spin, Progress, Divider } from 'antd';
+import { Form, Input, message, Modal, Tag, Tooltip, Empty, Spin, Progress, Divider } from 'antd';
 import { Server, HardDrive, Router, Shield, Database, Box, Wifi, WifiOff, AlertTriangle, Settings, X, Network } from 'lucide-react';
-import { getPortsByDevice } from '@/services/idc/port';
+import { getPortsByDevice, updatePort } from '@/services/idc/port';
 import styles from './DevicePortView.less';
 
 // 端口类型颜色映射
@@ -61,28 +61,77 @@ export const DevicePortViewContent: React.FC<DevicePortViewContentProps> = ({
 }) => {
     const [ports, setPorts] = useState<any[]>([]);
     const [loading, setLoading] = useState(false);
+    const [editModalOpen, setEditModalOpen] = useState(false);
+    const [editingPort, setEditingPort] = useState<IDC.Port | null>(null);
+    const [saving, setSaving] = useState(false);
+    const [form] = Form.useForm();
+
+    const loadPorts = async () => {
+        if (!device || externalPorts) return;
+
+        setLoading(true);
+        try {
+            const res = await getPortsByDevice(device.id);
+            if (res.success && res.data) {
+                setPorts(res.data);
+            }
+        } finally {
+            setLoading(false);
+        }
+    };
 
     // 如果外部没有传入端口数据，则自动获取
     useEffect(() => {
         if (device && !externalPorts) {
-            setLoading(true);
-            getPortsByDevice(device.id).then(res => {
-                if (res.success && res.data) {
-                    setPorts(res.data);
-                }
-            }).finally(() => setLoading(false));
+            loadPorts();
         } else if (externalPorts) {
             setPorts(externalPorts);
         }
     }, [device, externalPorts]);
+
+    const openPortEditor = (port: IDC.Port) => {
+        setEditingPort(port);
+        form.setFieldsValue({
+            portAlias: port.portAlias,
+        });
+        setEditModalOpen(true);
+    };
+
+    const handleSavePort = async () => {
+        if (!editingPort) return;
+
+        const values = await form.validateFields();
+        setSaving(true);
+        try {
+            const res = await updatePort(editingPort.id, {
+                portAlias: values.portAlias,
+            });
+
+            const updatedPort = res.data;
+            if (res.success && updatedPort) {
+                message.success('端口属性已更新');
+                setEditModalOpen(false);
+                setEditingPort(null);
+                if (externalPorts) {
+                    setPorts((prev) =>
+                        prev.map((port) => (port.id === updatedPort.id ? updatedPort : port)),
+                    );
+                } else {
+                    await loadPorts();
+                }
+            }
+        } finally {
+            setSaving(false);
+        }
+    };
 
     // 计算端口组数据
     const portGroups = useMemo(() => {
         if (!template?.portGroups) return [];
 
         return template.portGroups.map((pg: any) => {
-            const groupPorts = ports.filter(p => p.groupId === pg.id);
-            const connectedCount = groupPorts.filter(p => p.status === 'connected').length;
+            const groupPorts = ports.filter((p) => (p.groupId || p.portGroupId) === pg.id);
+            const connectedCount = groupPorts.filter(p => p.linkStatus === 'connected').length;
 
             const simulatedConnected = groupPorts.length === 0
                 ? Math.floor(Math.random() * Math.min(pg.count, 5))
@@ -92,6 +141,7 @@ export const DevicePortViewContent: React.FC<DevicePortViewContentProps> = ({
                 ...pg,
                 ports: groupPorts,
                 connectedCount: simulatedConnected,
+                renderCount: Math.max(pg.count || 0, groupPorts.length),
             };
         });
     }, [template, ports]);
@@ -100,7 +150,7 @@ export const DevicePortViewContent: React.FC<DevicePortViewContentProps> = ({
     const stats = useMemo(() => {
         if (!template?.portGroups) return { total: 0, connected: 0, available: 0, disabled: 0, error: 0 };
 
-        const total = template.portGroups.reduce((sum: number, pg: any) => sum + pg.count, 0);
+        const total = portGroups.reduce((sum: number, pg: any) => sum + pg.renderCount, 0);
         const connected = portGroups.reduce((sum: number, pg: any) => sum + pg.connectedCount, 0);
         const available = total - connected;
 
@@ -178,13 +228,13 @@ export const DevicePortViewContent: React.FC<DevicePortViewContentProps> = ({
                                     {group.poe && <Tag color="gold">PoE</Tag>}
                                 </div>
                                 <div className={styles.portGroupStats}>
-                                    <span>{group.connectedCount}/{group.count} 已用</span>
+                                    <span>{group.connectedCount}/{group.renderCount} 已用</span>
                                 </div>
                             </div>
                             <div className={styles.portGrid}>
-                                {Array.from({ length: group.count }).map((_, i) => {
-                                    const port = group.ports.find((p: any) => p.index === i);
-                                    const isConnected = port ? port.status === 'connected' : i < group.connectedCount;
+                                {Array.from({ length: group.renderCount }).map((_, i) => {
+                                    const port = group.ports[i];
+                                    const isConnected = port ? port.linkStatus === 'connected' : i < group.connectedCount;
                                     const portStatus = isConnected ? portStatusConfig.connected : portStatusConfig.available;
 
                                     return (
@@ -196,15 +246,19 @@ export const DevicePortViewContent: React.FC<DevicePortViewContentProps> = ({
                                                     <div>类型: {group.portType}</div>
                                                     <div>速率: {group.speed || '-'}</div>
                                                     <div>状态: {portStatus.text}</div>
+                                                    {port && <div>别名: {port.portAlias || '-'}</div>}
+                                                    {port && <div>点击端口可编辑属性</div>}
                                                     {group.poe && <div>PoE: 支持</div>}
                                                 </div>
                                             }
                                         >
                                             <div
                                                 className={`${styles.port} ${isConnected ? styles.connected : ''}`}
+                                                onClick={() => port && openPortEditor(port)}
                                                 style={{
                                                     backgroundColor: isConnected ? portStatus.color : '#e8e8e8',
                                                     borderColor: portTypeColors[group.portType] || '#d9d9d9',
+                                                    cursor: port ? 'pointer' : 'default',
                                                 }}
                                             >
                                                 <div
@@ -250,6 +304,26 @@ export const DevicePortViewContent: React.FC<DevicePortViewContentProps> = ({
                     </div>
                 </div>
             )}
+
+            <Modal
+                title={`编辑端口 ${editingPort?.portNumber || ''}`}
+                open={editModalOpen}
+                onCancel={() => {
+                    setEditModalOpen(false);
+                    setEditingPort(null);
+                }}
+                onOk={handleSavePort}
+                confirmLoading={saving}
+                okText="保存"
+                cancelText="取消"
+                destroyOnHidden
+            >
+                <Form form={form} layout="vertical">
+                    <Form.Item name="portAlias" label="端口别名">
+                        <Input allowClear placeholder="请输入端口别名" />
+                    </Form.Item>
+                </Form>
+            </Modal>
         </div>
     );
 };

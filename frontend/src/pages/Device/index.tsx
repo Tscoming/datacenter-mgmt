@@ -75,7 +75,15 @@ const USlotSelector: React.FC<{
   onSelect: (startU: number) => void;
   uUsage?: { u: number; occupied: boolean; deviceName?: string }[];
   loading?: boolean;
-}> = ({ cabinetId, uHeight, deviceUHeight, selectedStartU, onSelect }) => {
+}> = ({
+  cabinetId,
+  uHeight,
+  deviceUHeight,
+  selectedStartU,
+  onSelect,
+  uUsage,
+  loading,
+}) => {
   const [innerUsage, setInnerUsage] = useState<
     { u: number; occupied: boolean; deviceName?: string }[]
   >([]);

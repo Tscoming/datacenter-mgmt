@@ -64,7 +64,7 @@ const PortSelector: React.FC<{
   // 可用端口（未占用 且 非已排除端口）
   const availablePorts = useMemo(() => {
     return ports.filter(
-      (p) => p.status !== 'connected' && p.id !== excludePortId,
+      (p) => p.linkStatus !== 'connected' && p.id !== excludePortId,
     );
   }, [ports, excludePortId]);
 
@@ -102,9 +102,12 @@ const PortSelector: React.FC<{
           >
             {ports.map((port) => {
               const isSelected = value === port.id;
-              const isOccupied = port.status === 'connected';
+              const isOccupied = port.linkStatus === 'connected';
               const isExcluded = port.id === excludePortId;
               const canSelect = !isOccupied && !isExcluded;
+              const portLabel = port.portAlias
+                ? `${port.portNumber} / ${port.portAlias}`
+                : port.portNumber;
 
               return (
                 <div
@@ -117,26 +120,32 @@ const PortSelector: React.FC<{
                     cursor: canSelect ? 'pointer' : 'not-allowed',
                     backgroundColor: isSelected
                       ? '#1890ff'
-                      : isOccupied
-                        ? '#fff1f0'
+                      : !canSelect
+                        ? '#f0f0f0'
                         : '#f5f5f5',
-                    color: isSelected ? '#fff' : isOccupied ? '#999' : '#333',
+                    color: isSelected ? '#fff' : !canSelect ? '#999' : '#333',
                     border: isSelected
                       ? '2px solid #1890ff'
                       : '1px solid #d9d9d9',
-                    opacity: isExcluded ? 0.5 : 1,
+                    opacity: canSelect || isSelected ? 1 : 0.65,
                     transition: 'all 0.2s',
                   }}
-                  title={isOccupied ? '端口已被占用' : port.name}
+                  title={
+                    isOccupied
+                      ? '端口已被占用'
+                      : isExcluded
+                        ? '端口已在本连线中选择'
+                        : portLabel
+                  }
                 >
-                  <div style={{ fontWeight: 500 }}>{port.name}</div>
+                  <div style={{ fontWeight: 500 }}>{portLabel}</div>
                   <div
                     style={{
                       fontSize: 10,
                       color: isSelected ? '#fff' : '#8c8c8c',
                     }}
                   >
-                    {port.type} | {port.speed}
+                    {port.portType} | {port.speed}
                   </div>
                 </div>
               );
@@ -144,7 +153,7 @@ const PortSelector: React.FC<{
           </div>
           {value && (
             <div style={{ marginTop: 8, color: '#52c41a', fontSize: 12 }}>
-              ✓ 已选择: {ports.find((p) => p.id === value)?.name}
+              ✓ 已选择: {ports.find((p) => p.id === value)?.portNumber}
             </div>
           )}
         </div>
