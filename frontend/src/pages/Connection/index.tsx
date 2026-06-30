@@ -160,6 +160,7 @@ const ConnectionPage: React.FC = () => {
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [currentRow, setCurrentRow] = useState<IDC.Connection>();
   const [devices, setDevices] = useState<any[]>([]);
+  const [portsById, setPortsById] = useState<Record<string, IDC.Port>>({});
   const [connectionTypes, setConnectionTypes] = useState<
     { value: string; label: string; color: string }[]
   >([]);
@@ -199,6 +200,54 @@ const ConnectionPage: React.FC = () => {
     setSelectedSourcePort(undefined);
     setSelectedTargetPort(undefined);
     setCableColor('#3498db');
+  };
+
+  const loadPortsForConnections = async (connections: IDC.Connection[]) => {
+    const deviceIds = Array.from(
+      new Set(
+        connections.flatMap((conn) => [
+          conn.sourceDeviceId,
+          conn.targetDeviceId,
+        ]),
+      ),
+    ).filter(Boolean);
+
+    if (!deviceIds.length) return;
+
+    const results = await Promise.all(
+      deviceIds.map((deviceId) =>
+        getPortsByDevice(deviceId)
+          .then((res) => (res.success ? res.data || [] : []))
+          .catch(() => []),
+      ),
+    );
+
+    setPortsById((prev) => {
+      const next = { ...prev };
+      results.flat().forEach((port) => {
+        next[port.id] = port;
+      });
+      return next;
+    });
+  };
+
+  const renderEndpoint = (deviceId: string, portId: string) => {
+    const dev = devices.find((d) => d.id === deviceId);
+    const port = portsById[portId];
+
+    return (
+      <Space align="start">
+        <Monitor size={14} style={{ color: '#8c8c8c', marginTop: 2 }} />
+        <div>
+          <div>{dev?.name || deviceId}</div>
+          <div style={{ color: '#8c8c8c', fontSize: 12 }}>
+            {port
+              ? `${port.portNumber}${port.portAlias ? ` / ${port.portAlias}` : ''} (${port.portType}, ${port.speed})`
+              : portId}
+          </div>
+        </div>
+      </Space>
+    );
   };
 
   const columns: ProColumns<IDC.Connection>[] = [
@@ -247,17 +296,10 @@ const ConnectionPage: React.FC = () => {
     {
       title: '源设备',
       dataIndex: 'sourceDeviceId',
-      width: 180,
+      width: 240,
       search: false,
-      render: (_, record) => {
-        const dev = devices.find((d) => d.id === record.sourceDeviceId);
-        return (
-          <Space>
-            <Monitor size={14} style={{ color: '#8c8c8c' }} />
-            <span>{dev?.name || record.sourceDeviceId}</span>
-          </Space>
-        );
-      },
+      render: (_, record) =>
+        renderEndpoint(record.sourceDeviceId, record.sourcePortId),
     },
     {
       title: '',
@@ -268,17 +310,10 @@ const ConnectionPage: React.FC = () => {
     {
       title: '目标设备',
       dataIndex: 'targetDeviceId',
-      width: 180,
+      width: 240,
       search: false,
-      render: (_, record) => {
-        const dev = devices.find((d) => d.id === record.targetDeviceId);
-        return (
-          <Space>
-            <Monitor size={14} style={{ color: '#8c8c8c' }} />
-            <span>{dev?.name || record.targetDeviceId}</span>
-          </Space>
-        );
-      },
+      render: (_, record) =>
+        renderEndpoint(record.targetDeviceId, record.targetPortId),
     },
     {
       title: '长度(m)',
@@ -371,7 +406,7 @@ const ConnectionPage: React.FC = () => {
         actionRef={actionRef}
         rowKey="id"
         columns={columns}
-        scroll={{ x: 1400 }}
+        scroll={{ x: 1520 }}
         request={async (params) => {
           const res = await getConnections({
             current: params.current,
@@ -381,8 +416,10 @@ const ConnectionPage: React.FC = () => {
             status: params.status,
             cableNumber: params.cableNumber,
           });
+          const data = res.data || [];
+          await loadPortsForConnections(data);
           return {
-            data: res.data || [],
+            data,
             success: res.success,
             total: res.total || 0,
           };

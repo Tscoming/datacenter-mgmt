@@ -31,6 +31,7 @@ interface CabinetFrontViewContentProps {
     cabinet: IDC.Cabinet | null;
     devices: IDC.Device[];
     templates: any[];
+    selectedDeviceId?: string | null;
     onDeviceClick?: (device: IDC.Device) => void;
     compact?: boolean; // 紧凑模式，用于内嵌显示
 }
@@ -39,6 +40,7 @@ export const CabinetFrontViewContent: React.FC<CabinetFrontViewContentProps> = (
     cabinet,
     devices,
     templates,
+    selectedDeviceId,
     onDeviceClick,
     compact = false,
 }) => {
@@ -87,7 +89,7 @@ export const CabinetFrontViewContent: React.FC<CabinetFrontViewContentProps> = (
                     placement="right"
                 >
                     <div
-                        className={`${styles.device} ${styles[device.status] || ''}`}
+                        className={`${styles.device} ${styles[device.status] || ''} ${selectedDeviceId === device.id ? styles.selected : ''}`}
                         style={{
                             position: 'absolute',
                             top: topPosition,
@@ -124,7 +126,7 @@ export const CabinetFrontViewContent: React.FC<CabinetFrontViewContentProps> = (
                 </Tooltip>
             );
         });
-    }, [cabinet, devices, templates, onDeviceClick]);
+    }, [cabinet, devices, templates, selectedDeviceId, onDeviceClick]);
 
     if (!cabinet) return <Empty description="请选择机柜" />;
 

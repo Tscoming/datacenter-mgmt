@@ -41,6 +41,7 @@ import {
   getDeviceBrands,
   getDeviceCategories,
   getDeviceTemplates,
+  updateDeviceTemplate,
 } from '@/services/idc/deviceTemplate';
 
 const categoryIcons: Record<string, React.ReactNode> = {
@@ -66,7 +67,7 @@ const categoryLabels: Record<string, string> = {
 const DeviceTemplatePage: React.FC = () => {
   const actionRef = useRef<ActionType>(null);
   const [createModalOpen, setCreateModalOpen] = useState(false);
-  const [_editModalOpen, setEditModalOpen] = useState(false);
+  const [editModalOpen, setEditModalOpen] = useState(false);
   const [detailModalOpen, setDetailModalOpen] = useState(false);
   const [currentRow, setCurrentRow] = useState<IDC.DeviceTemplate>();
   const [categories, setCategories] = useState<
@@ -389,6 +390,182 @@ const DeviceTemplatePage: React.FC = () => {
           {portGroups.map((pg, index) => (
             <div
               key={`${pg.portType}-${pg.name}-${index}`}
+              style={{
+                display: 'flex',
+                gap: 8,
+                marginBottom: 8,
+                alignItems: 'center',
+              }}
+            >
+              <input
+                placeholder="端口组名称"
+                value={pg.name}
+                onChange={(e) => updatePortGroup(index, 'name', e.target.value)}
+                style={{
+                  width: 120,
+                  padding: '4px 8px',
+                  border: '1px solid #d9d9d9',
+                  borderRadius: 4,
+                }}
+              />
+              <select
+                value={pg.portType}
+                onChange={(e) =>
+                  updatePortGroup(index, 'portType', e.target.value)
+                }
+                style={{
+                  width: 130,
+                  padding: '4px 8px',
+                  border: '1px solid #d9d9d9',
+                  borderRadius: 4,
+                }}
+              >
+                {portTypeOptions.map((opt) => (
+                  <option key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
+              <input
+                type="number"
+                placeholder="数量"
+                value={pg.count}
+                min={1}
+                onChange={(e) =>
+                  updatePortGroup(
+                    index,
+                    'count',
+                    parseInt(e.target.value, 10) || 1,
+                  )
+                }
+                style={{
+                  width: 60,
+                  padding: '4px 8px',
+                  border: '1px solid #d9d9d9',
+                  borderRadius: 4,
+                }}
+              />
+              <select
+                value={pg.speed}
+                onChange={(e) =>
+                  updatePortGroup(index, 'speed', e.target.value)
+                }
+                style={{
+                  width: 100,
+                  padding: '4px 8px',
+                  border: '1px solid #d9d9d9',
+                  borderRadius: 4,
+                }}
+              >
+                {speedOptions.map((opt) => (
+                  <option key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
+              {portGroups.length > 1 && (
+                <Button
+                  type="link"
+                  danger
+                  size="small"
+                  onClick={() => removePortGroup(index)}
+                >
+                  删除
+                </Button>
+              )}
+            </div>
+          ))}
+        </Card>
+
+        <ProFormTextArea
+          name="description"
+          label="描述"
+          placeholder="请输入描述信息"
+        />
+      </ModalForm>
+
+      {/* 编辑模态框 */}
+      <ModalForm
+        key={currentRow?.id || 'edit-device-template'}
+        title="编辑设备模板"
+        open={editModalOpen}
+        onOpenChange={setEditModalOpen}
+        width={700}
+        initialValues={currentRow}
+        onFinish={async (values) => {
+          if (!currentRow) return false;
+          const data = {
+            ...values,
+            portGroups: portGroups.filter((pg) => pg.name && pg.count > 0),
+          } as Partial<IDC.DeviceTemplate>;
+          const res = await updateDeviceTemplate(currentRow.id, data);
+          if (res.success) {
+            message.success('更新成功');
+            actionRef.current?.reload();
+            return true;
+          }
+          message.error(res.errorMessage || '更新失败');
+          return false;
+        }}
+      >
+        <ProFormSelect
+          name="category"
+          label="设备类型"
+          options={categories}
+          rules={[{ required: true, message: '请选择设备类型' }]}
+        />
+        <ProFormText
+          name="brand"
+          label="品牌"
+          placeholder="如：华为、思科、H3C"
+          rules={[{ required: true, message: '请输入品牌' }]}
+        />
+        <ProFormText
+          name="model"
+          label="型号"
+          placeholder="如：S5735-L48T4X-A"
+          rules={[{ required: true, message: '请输入型号' }]}
+        />
+        <ProFormText
+          name="name"
+          label="模板名称"
+          placeholder="如：华为S5735-L48T4X-A"
+          rules={[{ required: true, message: '请输入模板名称' }]}
+        />
+        <ProFormDigit
+          name="uHeight"
+          label="U位高度"
+          min={1}
+          max={48}
+          rules={[{ required: true, message: '请输入U位高度' }]}
+        />
+        <ProFormDigit
+          name="maxPower"
+          label="最高功率(W)"
+          min={0}
+          max={10000}
+          fieldProps={{ addonAfter: 'W' }}
+        />
+
+        <Card
+          title="端口配置"
+          size="small"
+          style={{ marginBottom: 16 }}
+          extra={
+            <Button
+              type="link"
+              onClick={addPortGroup}
+              icon={<Plus size={14} />}
+            >
+              添加端口组
+            </Button>
+          }
+        >
+          {portGroups.map((pg, index) => (
+            <div
+              key={
+                (pg as Partial<IDC.PortGroup>).id || `${pg.portType}-${pg.name}`
+              }
               style={{
                 display: 'flex',
                 gap: 8,
