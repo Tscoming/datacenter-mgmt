@@ -41,7 +41,7 @@ export const powerPathColors: Record<string, string> = {
 // 链路状态颜色映射
 export const linkStatusColors: Record<string, string> = {
   active: '#52c41a', // 绿色 - 正常
-  inactive: '#d9d9d9', // 灰色 - 断开
+  inactive: '#6b7280', // 灰色 - 断开
   fault: '#f5222d', // 红色 - 故障
 };
 
@@ -54,5 +54,5 @@ export const getNodeStyleByPowerType = (powerType: string): NodeStyleConfig => {
 export const getEdgeColor = (powerPath: string, status: string): string => {
   if (status === 'fault') return linkStatusColors.fault;
   if (status === 'inactive') return linkStatusColors.inactive;
-  return powerPathColors[powerPath] || '#d9d9d9';
+  return powerPathColors[powerPath] || '#6b7280';
 };

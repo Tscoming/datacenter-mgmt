@@ -17,12 +17,14 @@ import {
 interface PowerTopologyGraphProps {
   nodes: PowerNode[];
   links: PowerLink[];
+  riskNodeIds?: string[];
   loading?: boolean;
 }
 
 const PowerTopologyGraph: React.FC<PowerTopologyGraphProps> = ({
   nodes,
   links,
+  riskNodeIds = [],
   loading = false,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -36,18 +38,47 @@ const PowerTopologyGraph: React.FC<PowerTopologyGraphProps> = ({
     }
 
     // 转换数据为 G6 格式
+    const riskNodeIdSet = new Set(riskNodeIds);
     const g6Data = {
-      nodes: nodes.map((node) => ({
-        id: node.id,
-        data: {
-          label: node.name,
-          type: node.type,
-          status: node.status,
-          load: node.load,
-          capacity: node.capacity,
-        },
-        style: getNodeStyleByPowerType(node.type),
-      })),
+      nodes: nodes.map((node) => {
+        const hasPowerRisk = riskNodeIdSet.has(node.id);
+
+        return {
+          id: node.id,
+          data: {
+            label: node.name,
+            type: node.type,
+            status: node.status,
+            load: node.load,
+            capacity: node.capacity,
+            hasPowerRisk,
+          },
+          style: {
+            ...getNodeStyleByPowerType(node.type),
+            ...(hasPowerRisk
+              ? {
+                  badges: [
+                    {
+                      text: '!',
+                      placement: 'right-top' as const,
+                      backgroundFill: '#faad14',
+                      backgroundStroke: '#1f1f1f',
+                      backgroundLineWidth: 2,
+                      fill: '#1f1f1f',
+                      fontWeight: 700,
+                      fontSize: 12,
+                      padding: [2, 6, 2, 6],
+                    },
+                  ],
+                  halo: true,
+                  haloStroke: '#faad14',
+                  haloStrokeOpacity: 0.22,
+                  haloLineWidth: 10,
+                }
+              : {}),
+          },
+        };
+      }),
       edges: links.map((link) => ({
         id: link.id,
         source: link.source,
@@ -96,7 +127,7 @@ const PowerTopologyGraph: React.FC<PowerTopologyGraphProps> = ({
             return label.length > 10 ? `${label.slice(0, 10)}...` : label;
           },
           labelPlacement: 'bottom',
-          labelFill: '#262626',
+          labelFill: 'rgba(255, 255, 255, 0.78)',
           labelFontSize: 11,
           labelFontWeight: 500,
           labelOffsetY: 8,
@@ -167,12 +198,17 @@ const PowerTopologyGraph: React.FC<PowerTopologyGraphProps> = ({
               loadInfo = `<div>功耗: ${data.load}W</div>`;
             }
 
+            const riskInfo = data.hasPowerRisk
+              ? '<div style="margin-top: 4px; color: #faad14; font-weight: 600;">⚠ 存在单路电源风险</div>'
+              : '';
+
             return `
-              <div style="padding: 8px 12px; font-size: 13px;">
+              <div style="padding: 8px 12px; font-size: 13px; color: rgba(255,255,255,0.88); background: #1f1f1f;">
                 <div style="font-weight: bold; margin-bottom: 4px;">${data.label || item.id}</div>
                 <div>类型: ${typeLabel[data.type] || data.type}</div>
                 <div>状态: ${statusLabel[data.status] || data.status}</div>
                 ${loadInfo}
+                ${riskInfo}
               </div>
             `;
           },
@@ -203,7 +239,7 @@ const PowerTopologyGraph: React.FC<PowerTopologyGraphProps> = ({
         graphRef.current = null;
       }
     };
-  }, [nodes, links, loading]);
+  }, [nodes, links, riskNodeIds, loading]);
 
   // 窗口大小变化时调整图大小
   useEffect(() => {

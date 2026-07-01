@@ -24,7 +24,7 @@ import {
   TrendingUp,
   Zap,
 } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { getAllDatacenters } from '@/services/idc/datacenter';
 import {
   getPowerLoadBalance,
@@ -250,6 +250,10 @@ const PowerPage: React.FC = () => {
   const [loadBalance, setLoadBalance] = useState<LoadBalanceStatus | null>(
     null,
   );
+  const riskNodeIds = useMemo(
+    () => redundancy?.singlePower.map((node) => node.id) || [],
+    [redundancy],
+  );
 
   // 加载数据中心列表
   useEffect(() => {
@@ -369,6 +373,7 @@ const PowerPage: React.FC = () => {
             <PowerTopologyGraph
               nodes={topology.nodes}
               links={topology.links}
+              riskNodeIds={riskNodeIds}
               loading={loading}
             />
           </Card>
