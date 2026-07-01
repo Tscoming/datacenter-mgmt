@@ -183,7 +183,7 @@ const ZONE_COLORS: Record<IDC.LayoutZoneType, string> = {
   hot_aisle: 'rgba(245, 34, 45, 0.10)',
   cold_aisle: 'rgba(22, 119, 255, 0.10)',
   restricted: 'rgba(250, 173, 20, 0.10)',
-  other: 'rgba(0, 0, 0, 0.06)',
+  other: 'rgba(255, 255, 255, 0.08)',
 };
 
 function zoneLabel(type: IDC.LayoutZoneType) {
@@ -2775,7 +2775,7 @@ const DatacenterLayoutPage: React.FC = () => {
                         style={{
                           padding: 8,
                           fontSize: 12,
-                          color: 'rgba(0,0,0,0.75)',
+                          color: 'rgba(255,255,255,0.78)',
                         }}
                       >
                         {z.name || zoneLabel(z.type)}

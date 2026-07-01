@@ -16,11 +16,11 @@ export const deviceIcons: Record<string, React.ReactNode> = {
 
 // 设备状态配置
 export const statusConfig: Record<string, { color: string; bg: string; icon: React.ReactNode; text: string }> = {
-    online: { color: '#52c41a', bg: '#f6ffed', icon: <Wifi size={12} />, text: '在线' },
-    offline: { color: '#8c8c8c', bg: '#fafafa', icon: <WifiOff size={12} />, text: '离线' },
-    warning: { color: '#faad14', bg: '#fffbe6', icon: <AlertTriangle size={12} />, text: '告警' },
-    error: { color: '#f5222d', bg: '#fff2f0', icon: <AlertTriangle size={12} />, text: '故障' },
-    maintenance: { color: '#1890ff', bg: '#e6f7ff', icon: <Settings size={12} />, text: '维护' },
+    online: { color: '#52c41a', bg: 'rgba(82, 196, 26, 0.12)', icon: <Wifi size={12} />, text: '在线' },
+    offline: { color: '#8c8c8c', bg: 'rgba(255, 255, 255, 0.06)', icon: <WifiOff size={12} />, text: '离线' },
+    warning: { color: '#faad14', bg: 'rgba(250, 173, 20, 0.14)', icon: <AlertTriangle size={12} />, text: '告警' },
+    error: { color: '#f5222d', bg: 'rgba(245, 34, 45, 0.14)', icon: <AlertTriangle size={12} />, text: '故障' },
+    maintenance: { color: '#1890ff', bg: 'rgba(24, 144, 255, 0.14)', icon: <Settings size={12} />, text: '维护' },
 };
 
 // 每个U位的高度（像素）

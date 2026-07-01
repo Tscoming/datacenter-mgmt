@@ -30,6 +30,11 @@
 
 .tree {
     :global {
+        .ant-tree {
+            color: var(--ant-color-text);
+            background: transparent;
+        }
+
         .ant-tree-node-content-wrapper {
             display: flex;
             align-items: center;
@@ -38,18 +43,19 @@
             transition: all 0.2s ease;
 
             &:hover {
-                background: linear-gradient(135deg, #667eea10 0%, #764ba210 100%);
+                background: var(--ant-color-fill-tertiary);
             }
         }
 
         .ant-tree-node-selected {
-            background: linear-gradient(135deg, #667eea20 0%, #764ba220 100%) !important;
+            background: var(--ant-control-item-bg-active) !important;
         }
 
         .ant-tree-switcher {
             display: flex;
             align-items: center;
             justify-content: center;
+            color: var(--ant-color-text-tertiary);
         }
 
         .ant-tree-title {
@@ -83,7 +89,7 @@
 
 .nodeName {
     font-weight: 500;
-    color: #333;
+    color: var(--ant-color-text);
 }
 
 .nodeTag {
@@ -94,7 +100,7 @@
 }
 
 .nodeInfo {
-    color: #999;
+    color: var(--ant-color-text-tertiary);
     font-size: 12px;
     margin-left: 8px;
 }
@@ -108,8 +114,8 @@
         font-weight: 600;
         margin-bottom: 16px;
         padding-bottom: 12px;
-        border-bottom: 1px solid #f0f0f0;
-        color: #333;
+        border-bottom: 1px solid var(--ant-color-border-secondary);
+        color: var(--ant-color-text);
     }
 }
 
@@ -123,7 +129,8 @@
     display: flex;
     align-items: center;
     padding: 8px 0;
-    border-bottom: 1px dashed #f5f5f5;
+    color: var(--ant-color-text);
+    border-bottom: 1px dashed var(--ant-color-border-secondary);
 
     &:last-child {
         border-bottom: none;
@@ -132,7 +139,7 @@
 
 .label {
     width: 80px;
-    color: #666;
+    color: var(--ant-color-text-secondary);
     flex-shrink: 0;
 }
 

@@ -11,17 +11,39 @@
         .ant-modal-content {
             padding: 0;
             overflow: hidden;
+            background: #1f1f1f;
+            border: 1px solid #303030;
+            box-shadow: 0 16px 48px rgba(0, 0, 0, 0.45);
         }
 
         .ant-modal-close {
             top: 16px;
             right: 16px;
+            color: rgba(255, 255, 255, 0.55);
+
+            &:hover {
+                color: rgba(255, 255, 255, 0.88);
+                background: rgba(255, 255, 255, 0.08);
+            }
+        }
+
+        .ant-modal-body {
+            background: #1f1f1f;
         }
     }
 }
 
 .container {
     padding: 24px;
+    color: rgba(255, 255, 255, 0.88);
+    background: #1f1f1f;
+
+    :global {
+        .ant-progress-text,
+        .ant-badge-status-text {
+            color: rgba(255, 255, 255, 0.65);
+        }
+    }
 }
 
 .header {
@@ -30,7 +52,7 @@
     align-items: flex-start;
     margin-bottom: 20px;
     padding-bottom: 16px;
-    border-bottom: 1px solid #f0f0f0;
+    border-bottom: 1px solid #303030;
 }
 
 .cabinetInfo {
@@ -38,13 +60,14 @@
         margin: 0 0 8px 0;
         font-size: 20px;
         font-weight: 600;
+        color: rgba(255, 255, 255, 0.88);
     }
 }
 
 .cabinetMeta {
     display: flex;
     gap: 16px;
-    color: #8c8c8c;
+    color: rgba(255, 255, 255, 0.45);
     font-size: 13px;
 }
 
@@ -59,7 +82,7 @@
 
 .statLabel {
     font-size: 12px;
-    color: #8c8c8c;
+    color: rgba(255, 255, 255, 0.55);
     margin-bottom: 4px;
     display: block;
 }
@@ -67,8 +90,8 @@
 .cabinetFront {
     display: flex;
     gap: 12px;
-    background: linear-gradient(135deg, #f0f5ff 0%, #e6f0fa 100%);
-    border: 1px solid #d9e8f6;
+    background: #111a24;
+    border: 1px solid #2a3a4f;
     border-radius: 8px;
     padding: 16px;
 }
@@ -90,21 +113,21 @@
     align-items: center;
     justify-content: center;
     font-size: 10px;
-    color: #666;
+    color: rgba(255, 255, 255, 0.55);
     font-family: monospace;
-    background: rgba(0, 0, 0, 0.03);
-    border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+    background: #18212c;
+    border-bottom: 1px solid #2a3a4f;
     flex-shrink: 0;
 }
 
 .cabinetBody {
     flex: 1;
     position: relative;
-    background: #fff;
-    border: 1px solid #e8e8e8;
+    background: #141414;
+    border: 1px solid #303030;
     border-radius: 4px;
     overflow: hidden;
-    box-shadow: inset 0 2px 8px rgba(0, 0, 0, 0.06);
+    box-shadow: inset 0 2px 8px rgba(0, 0, 0, 0.12);
 }
 
 /* 背景槽位层 - 显示所有U位 */
@@ -121,13 +144,13 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+    border-bottom: 1px solid #2a2a2a;
     box-sizing: border-box;
     flex-shrink: 0;
 }
 
 .slot.empty {
-    background: #fafafa;
+    background: #181818;
 }
 
 .slot.occupied {
@@ -136,7 +159,7 @@
 
 .emptyLabel {
     font-size: 10px;
-    color: #bfbfbf;
+    color: rgba(255, 255, 255, 0.28);
 }
 
 /* 设备层 - 绝对定位覆盖 */
@@ -192,7 +215,7 @@
     border-left: 3px solid;
     cursor: pointer;
     transition: all 0.2s;
-    background: #fff;
+    background: #1f1f1f;
     pointer-events: auto;
     box-sizing: border-box;
 
@@ -224,7 +247,7 @@
     }
 
     &.selected {
-        background: #e6f4ff !important;
+        background: rgba(22, 119, 255, 0.22) !important;
         border-color: #1677ff !important;
         border-left-color: #1677ff !important;
         box-shadow: 0 0 0 2px rgba(22, 119, 255, 0.18);
@@ -273,6 +296,7 @@
 .deviceName {
     font-weight: 500;
     font-size: 13px;
+    color: rgba(255, 255, 255, 0.88);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -280,7 +304,7 @@
 
 .deviceModel {
     font-size: 11px;
-    color: #8c8c8c;
+    color: rgba(255, 255, 255, 0.55);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -295,14 +319,14 @@
 
 .deviceIp {
     font-size: 11px;
-    color: #8c8c8c;
+    color: rgba(255, 255, 255, 0.55);
     font-family: monospace;
 }
 
 .uLabel {
     font-size: 10px;
-    color: #8c8c8c;
-    background: #f5f5f5;
+    color: rgba(255, 255, 255, 0.55);
+    background: rgba(255, 255, 255, 0.08);
     padding: 2px 6px;
     border-radius: 4px;
     flex-shrink: 0;
@@ -328,7 +352,7 @@
     justify-content: space-between;
     align-items: center;
     font-size: 12px;
-    color: #333;
+    color: rgba(255, 255, 255, 0.78);
 
     span:last-child {
         font-weight: 600;
@@ -338,8 +362,8 @@
 .deviceCount {
     text-align: center;
     padding: 12px;
-    background: #e6f7ff;
-    border: 1px solid #91d5ff;
+    background: rgba(22, 119, 255, 0.12);
+    border: 1px solid rgba(22, 119, 255, 0.32);
     border-radius: 8px;
 }
 
@@ -351,5 +375,5 @@
 
 .countLabel {
     font-size: 12px;
-    color: #666;
+    color: rgba(255, 255, 255, 0.55);
 }

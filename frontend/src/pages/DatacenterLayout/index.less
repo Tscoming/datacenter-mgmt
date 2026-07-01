@@ -26,13 +26,15 @@
   flex-direction: column;
   gap: 8px;
   border-radius: 14px;
-  border-color: rgba(0, 0, 0, 0.12);
+  border-color: rgba(255, 255, 255, 0.12);
+  color: rgba(255, 255, 255, 0.72);
+  background: rgba(255, 255, 255, 0.03);
 }
 
 .toolModeButton :global(.ant-btn-icon) {
   margin-inline-end: 0;
   line-height: 0;
-  color: var(--tool-accent, rgba(0, 0, 0, 0.65));
+  color: var(--tool-accent, rgba(255, 255, 255, 0.65));
   transform: translateZ(0);
 }
 
@@ -40,7 +42,7 @@
   font-size: 12px;
   line-height: 1.1;
   text-align: center;
-  color: rgba(0, 0, 0, 0.85);
+  color: rgba(255, 255, 255, 0.78);
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
@@ -48,7 +50,8 @@
 }
 
 .toolModeButton:hover {
-  border-color: var(--tool-accent, rgba(0, 0, 0, 0.22));
+  border-color: var(--tool-accent, rgba(255, 255, 255, 0.22));
+  background: rgba(255, 255, 255, 0.06);
   box-shadow:
     0 1px 0 rgba(0, 0, 0, 0.03),
     0 8px 20px rgba(0, 0, 0, 0.06);
@@ -143,7 +146,7 @@
   height: 100%;
   overflow: hidden;
   border-radius: 8px;
-  background: #f5f7fa;
+  background: #0f141b;
 }
 
 .selectBox {
@@ -194,12 +197,12 @@
   inset: 0;
   transform-origin: 0 0;
   box-sizing: border-box;
-  border: 2px solid rgba(22, 119, 255, 0.65);
-  background-color: #ffffff;
+  border: 2px solid rgba(64, 150, 255, 0.72);
+  background-color: #111820;
   background-image:
-    linear-gradient(#edf1f5 1px, transparent 1px),
-    linear-gradient(90deg, #edf1f5 1px, transparent 1px);
-  box-shadow: 0 0 0 1px rgba(22, 119, 255, 0.12);
+    linear-gradient(rgba(120, 145, 180, 0.18) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(120, 145, 180, 0.18) 1px, transparent 1px);
+  box-shadow: 0 0 0 1px rgba(64, 150, 255, 0.22);
 }
 
 .majorGrid {
@@ -208,8 +211,8 @@
   z-index: 0;
   pointer-events: none;
   background-image:
-    linear-gradient(rgba(58, 72, 92, 0.72) 2px, transparent 2px),
-    linear-gradient(90deg, rgba(58, 72, 92, 0.72) 2px, transparent 2px);
+    linear-gradient(rgba(78, 112, 156, 0.42) 2px, transparent 2px),
+    linear-gradient(90deg, rgba(78, 112, 156, 0.42) 2px, transparent 2px);
 }
 
 .cabinet {
@@ -217,9 +220,9 @@
   width: 30px;
   height: 50px;
   border-radius: 6px;
-  border: 1px solid rgba(0, 0, 0, 0.12);
-  background: rgba(22, 119, 255, 0.16);
-  color: rgba(0, 0, 0, 0.88);
+  border: 1px solid rgba(64, 150, 255, 0.58);
+  background: rgba(22, 119, 255, 0.22);
+  color: rgba(255, 255, 255, 0.88);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -229,16 +232,16 @@
 }
 
 .cabinetSelected {
-  outline: 2px solid #1677ff;
+  outline: 2px solid #4096ff;
   outline-offset: 2px;
-  background: rgba(22, 119, 255, 0.22);
+  background: rgba(64, 150, 255, 0.34);
 }
 
 .zone {
   position: absolute;
   border-radius: 8px;
-  border: 1px dashed rgba(0, 0, 0, 0.28);
-  background: rgba(82, 196, 26, 0.12);
+  border: 1px dashed rgba(82, 196, 26, 0.56);
+  background: rgba(82, 196, 26, 0.16);
   user-select: none;
 }
 
@@ -252,8 +255,8 @@
   width: 10px;
   height: 10px;
   border-radius: 999px;
-  background: #ffffff;
-  border: 1px solid rgba(0, 0, 0, 0.35);
+  background: #141414;
+  border: 1px solid rgba(255, 255, 255, 0.45);
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.18);
 }
 
@@ -286,8 +289,8 @@
   width: 34px;
   height: 34px;
   border-radius: 10px;
-  border: 1px solid rgba(0, 0, 0, 0.14);
-  background: rgba(0, 0, 0, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(255, 255, 255, 0.06);
   display: flex;
   align-items: center;
   justify-content: center;

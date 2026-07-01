@@ -256,8 +256,8 @@ export const DevicePortViewContent: React.FC<DevicePortViewContentProps> = ({
                                                 className={`${styles.port} ${isConnected ? styles.connected : ''}`}
                                                 onClick={() => port && openPortEditor(port)}
                                                 style={{
-                                                    backgroundColor: isConnected ? portStatus.color : '#e8e8e8',
-                                                    borderColor: portTypeColors[group.portType] || '#d9d9d9',
+                                                    backgroundColor: isConnected ? portStatus.color : 'var(--ant-color-fill-tertiary)',
+                                                    borderColor: portTypeColors[group.portType] || 'var(--ant-color-border)',
                                                     cursor: port ? 'pointer' : 'default',
                                                 }}
                                             >
@@ -290,7 +290,7 @@ export const DevicePortViewContent: React.FC<DevicePortViewContentProps> = ({
                             <span>已连接</span>
                         </div>
                         <div className={styles.legendItem}>
-                            <div className={styles.legendColor} style={{ backgroundColor: '#e8e8e8', border: '1px solid #d9d9d9' }} />
+                            <div className={styles.legendColor} style={{ backgroundColor: 'var(--ant-color-fill-tertiary)', border: '1px solid var(--ant-color-border)' }} />
                             <span>可用</span>
                         </div>
                         <div className={styles.legendItem}>
