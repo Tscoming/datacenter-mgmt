@@ -70,7 +70,7 @@ npm run dev:frontend
 
 默认地址：
 
-- 前端：`http://localhost:8002`
+- 前端：`http://localhost:8000`
 - 后端：`http://127.0.0.1:8008`
 - 健康检查：`http://127.0.0.1:8008/health`
 

@@ -1,11 +1,45 @@
 // https://umijs.org/config/
 
+import fs from 'node:fs';
 import { join } from 'node:path';
 import { defineConfig } from '@umijs/max';
 import defaultSettings from './defaultSettings';
 import proxy from './proxy';
 
 import routes from './routes';
+
+const rootEnvFile = join(__dirname, '..', '..', '.env');
+
+const parseEnvLine = (line: string) => {
+  const trimmed = line.trim();
+  if (!trimmed || trimmed.startsWith('#')) return null;
+
+  const separator = trimmed.indexOf('=');
+  if (separator < 0) return null;
+
+  const key = trimmed.slice(0, separator).trim();
+  let value = trimmed.slice(separator + 1).trim();
+
+  if (
+    (value.startsWith('"') && value.endsWith('"')) ||
+    (value.startsWith("'") && value.endsWith("'"))
+  ) {
+    value = value.slice(1, -1);
+  }
+
+  return key ? { key, value } : null;
+};
+
+if (fs.existsSync(rootEnvFile)) {
+  const content = fs.readFileSync(rootEnvFile, 'utf8');
+  for (const line of content.split(/\r?\n/)) {
+    const parsed = parseEnvLine(line);
+    if (!parsed || process.env[parsed.key] !== undefined) continue;
+    process.env[parsed.key] = parsed.value;
+  }
+}
+
+process.env.PORT = process.env.FRONTEND_PORT || '8000';
 
 const { REACT_APP_ENV = 'dev' } = process.env;
 

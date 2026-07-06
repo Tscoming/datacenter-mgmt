@@ -1,7 +1,10 @@
 import express from 'express';
+import { loadEnv } from './env';
 import { loadMockRouteModules } from './mockRoutes';
 import { requestLogger } from './requestLogger';
 import { registerMockRoutes } from './registerMockRoutes';
+
+loadEnv();
 
 const app = express();
 const port = Number(process.env.PORT || 8008);
