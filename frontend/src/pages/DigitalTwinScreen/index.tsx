@@ -5,6 +5,7 @@ import { Button, Select, Switch } from 'antd';
 import {
   AlertTriangle,
   ArrowLeft,
+  ChevronDown,
   CheckSquare,
   CloudSun,
   Cpu,
@@ -13,6 +14,7 @@ import {
   Monitor,
   Power,
   Server,
+  Settings2,
   Snowflake,
   Thermometer,
   XSquare,
@@ -268,7 +270,10 @@ const DigitalTwinScreen: React.FC = () => {
   const [selectedDatacenterId, setSelectedDatacenterId] = useState<string>();
   const [connections, setConnections] = useState<IDC.Connection[]>([]);
   const [connectionTypes, setConnectionTypes] = useState<ScreenConnectionType[]>([]);
+  const [enabledConnectionTypes, setEnabledConnectionTypes] = useState<string[]>([]);
   const [showConnections, setShowConnections] = useState(false);
+  const [showCabinetNames, setShowCabinetNames] = useState(false);
+  const [sceneMenuOpen, setSceneMenuOpen] = useState(false);
   const [currentTime, setCurrentTime] = useState(new Date());
 
   useEffect(() => {
@@ -283,6 +288,7 @@ const DigitalTwinScreen: React.FC = () => {
           setData(result.data);
           setConnections(result.connections);
           setConnectionTypes(result.connectionTypes);
+          setEnabledConnectionTypes(result.connectionTypes.map((type) => type.value));
           setErrorMessage(null);
         }
       } catch (error) {
@@ -291,6 +297,7 @@ const DigitalTwinScreen: React.FC = () => {
           setData(null);
           setConnections([]);
           setConnectionTypes([]);
+          setEnabledConnectionTypes([]);
           setErrorMessage(error instanceof Error ? error.message : 'Failed to load digital twin screen scene data.');
         }
       }
@@ -314,11 +321,13 @@ const DigitalTwinScreen: React.FC = () => {
       setData(result.data);
       setConnections(result.connections);
       setConnectionTypes(result.connectionTypes);
+      setEnabledConnectionTypes(result.connectionTypes.map((type) => type.value));
     } catch (error) {
       console.error('Failed to load digital twin screen scene data:', error);
       setData(null);
       setConnections([]);
       setConnectionTypes([]);
+      setEnabledConnectionTypes([]);
       setErrorMessage(error instanceof Error ? error.message : 'Failed to load digital twin screen scene data.');
     }
   };
@@ -329,6 +338,13 @@ const DigitalTwinScreen: React.FC = () => {
       return;
     }
     history.push('/dashboard');
+  };
+
+  const handleConnectionTypeVisibleChange = (connectionType: string, checked: boolean) => {
+    setEnabledConnectionTypes((prev) => {
+      if (checked) return prev.includes(connectionType) ? prev : [...prev, connectionType];
+      return prev.filter((type) => type !== connectionType);
+    });
   };
 
   useEffect(() => {
@@ -490,20 +506,66 @@ const DigitalTwinScreen: React.FC = () => {
         </aside>
 
         <section className={styles.sceneWrap}>
-          <div className={styles.sceneStats}>
-            <span>FPS: <b>60</b></span>
-            <span>Draw Calls: <b>{data.cabinets.length * 12}</b></span>
-            <span>Cabinets: <b>{data.cabinets.length}</b></span>
+          {showConnections && connectionTypes.length > 0 && (
+            <div className={styles.sceneConnectionLegend}>
+              {connectionTypes.map((type) => (
+                <div key={type.value} className={styles.connectionLegendItem}>
+                  <span
+                    className={styles.connectionLegendLine}
+                    style={{ backgroundColor: type.color, color: type.color }}
+                  />
+                  <span>{type.label}</span>
+                  <Switch
+                    size="small"
+                    checked={enabledConnectionTypes.includes(type.value)}
+                    onChange={(checked) =>
+                      handleConnectionTypeVisibleChange(type.value, checked)
+                    }
+                  />
+                </div>
+              ))}
+            </div>
+          )}
+          <div className={styles.sceneMenu}>
+            <button
+              type="button"
+              className={styles.sceneMenuButton}
+              onClick={() => setSceneMenuOpen((open) => !open)}
+            >
+              <Settings2 size={14} />
+              <span>显示设置</span>
+              <ChevronDown
+                size={14}
+                className={sceneMenuOpen ? styles.sceneMenuIconOpen : ''}
+              />
+            </button>
+            {sceneMenuOpen && (
+              <div className={styles.sceneMenuPanel}>
+                <div className={styles.sceneSwitch}>
+                  <span>显示机柜名称</span>
+                  <Switch
+                    size="small"
+                    checked={showCabinetNames}
+                    onChange={setShowCabinetNames}
+                  />
+                </div>
+                <div className={styles.sceneSwitch}>
+                  <span>显示连线关系</span>
+                  <Switch
+                    size="small"
+                    checked={showConnections}
+                    onChange={setShowConnections}
+                  />
+                </div>
+              </div>
+            )}
           </div>
-          <div className={styles.connectionSwitch}>
-            <Switch
-              size="small"
-              checked={showConnections}
-              onChange={setShowConnections}
-            />
-            <span>显示连线关系</span>
-          </div>
-          <Canvas shadows dpr={[1, 2]} className={styles.sceneCanvas}>
+          <Canvas
+            shadows
+            dpr={[1, 2]}
+            className={styles.sceneCanvas}
+            onContextMenu={(event) => event.preventDefault()}
+          >
             <Suspense fallback={null}>
               <ScreenDatacenterScene
                 layout={data.layout}
@@ -513,6 +575,8 @@ const DigitalTwinScreen: React.FC = () => {
                 connections={connections}
                 connectionTypes={connectionTypes}
                 showConnections={showConnections}
+                showCabinetNames={showCabinetNames}
+                enabledConnectionTypes={enabledConnectionTypes}
               />
             </Suspense>
           </Canvas>

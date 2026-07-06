@@ -280,43 +280,96 @@
   height: 100%;
 }
 
-.sceneStats {
+.sceneConnectionLegend {
   position: absolute;
   top: 14px;
   left: 14px;
   z-index: 2;
   display: grid;
-  gap: 4px;
-  width: 130px;
-  padding: 8px 10px;
-  color: #00eaff;
-  font-family: 'SFMono-Regular', Consolas, monospace;
-  font-size: 11px;
+  gap: 8px;
+  min-width: 184px;
+  padding: 10px 12px;
+  color: #d9fbff;
+  font-size: 12px;
   border: 1px solid rgba(0, 234, 255, 0.45);
-  border-radius: 6px;
-  background: rgba(3, 18, 30, 0.78);
-
-  b {
-    color: #ff5b5b;
-  }
+  border-radius: 8px;
+  background: rgba(3, 18, 30, 0.82);
+  box-shadow: inset 0 0 14px rgba(0, 234, 255, 0.07);
 }
 
-.connectionSwitch {
+.connectionLegendItem {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  min-width: 0;
+  white-space: nowrap;
+}
+
+.connectionLegendLine {
+  display: block;
+  width: 34px;
+  height: 3px;
+  border-radius: 999px;
+  box-shadow: 0 0 10px currentColor;
+}
+
+.sceneMenu {
   position: absolute;
   top: 14px;
   right: 14px;
   z-index: 2;
-  display: inline-flex;
+  display: grid;
   gap: 8px;
+  justify-items: end;
+}
+
+.sceneMenuButton {
+  display: inline-flex;
+  gap: 7px;
   align-items: center;
-  height: 30px;
+  height: 32px;
   padding: 0 10px;
   color: #d9fbff;
   font-size: 12px;
   border: 1px solid rgba(0, 234, 255, 0.38);
   border-radius: 6px;
-  background: rgba(3, 18, 30, 0.78);
+  background: rgba(3, 18, 30, 0.84);
   box-shadow: inset 0 0 14px rgba(0, 234, 255, 0.07);
+  cursor: pointer;
+}
+
+.sceneMenuButton:hover {
+  color: #00f6ff;
+  border-color: rgba(0, 234, 255, 0.62);
+  background: rgba(0, 234, 255, 0.12);
+}
+
+.sceneMenuIconOpen {
+  transform: rotate(180deg);
+}
+
+.sceneMenuPanel {
+  display: grid;
+  gap: 8px;
+  width: 172px;
+  padding: 10px;
+  border: 1px solid rgba(0, 234, 255, 0.38);
+  border-radius: 8px;
+  background: rgba(3, 18, 30, 0.88);
+  box-shadow:
+    inset 0 0 14px rgba(0, 234, 255, 0.07),
+    0 10px 26px rgba(0, 0, 0, 0.28);
+}
+
+.sceneSwitch {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-width: 0;
+  height: 28px;
+  color: #d9fbff;
+  font-size: 12px;
 }
 
 .sceneTabs {

@@ -19,6 +19,8 @@ interface ScreenDatacenterSceneProps {
   connections: IDC.Connection[];
   connectionTypes: { value: string; label: string; color: string }[];
   showConnections: boolean;
+  showCabinetNames: boolean;
+  enabledConnectionTypes: string[];
 }
 
 const statusColor: Record<string, string> = {
@@ -128,21 +130,19 @@ const CabinetConnectionCurve: React.FC<{
     const offset = (line.index - (line.total - 1) / 2) * 0.16;
     const startPoint = start.clone().add(normal.clone().multiplyScalar(offset * 0.35));
     const endPoint = end.clone().add(normal.clone().multiplyScalar(offset * 0.35));
-    const liftHeight = 0.62;
-    const elevatedStart = startPoint.clone().add(new THREE.Vector3(0, liftHeight, 0));
-    const elevatedEnd = endPoint.clone().add(new THREE.Vector3(0, liftHeight, 0));
-    const control = elevatedStart
+    const archHeight = Math.min(2.2, Math.max(0.58, distance * 0.18));
+    const startControl = startPoint
       .clone()
-      .lerp(elevatedEnd, 0.5)
-      .add(normal.clone().multiplyScalar(offset))
-      .add(new THREE.Vector3(0, Math.min(1.05, Math.max(0.35, distance * 0.12)), 0));
-    const path = new THREE.CurvePath<THREE.Vector3>();
+      .lerp(endPoint, 0.26)
+      .add(new THREE.Vector3(0, archHeight, 0))
+      .add(normal.clone().multiplyScalar(offset * 0.28));
+    const endControl = endPoint
+      .clone()
+      .lerp(startPoint, 0.26)
+      .add(new THREE.Vector3(0, archHeight, 0))
+      .add(normal.clone().multiplyScalar(offset * 0.28));
 
-    path.add(new THREE.LineCurve3(startPoint, elevatedStart));
-    path.add(new THREE.QuadraticBezierCurve3(elevatedStart, control, elevatedEnd));
-    path.add(new THREE.LineCurve3(elevatedEnd, endPoint));
-
-    return path;
+    return new THREE.CubicBezierCurve3(startPoint, startControl, endControl, endPoint);
   }, [line.index, line.total, source.x, source.z, target.x, target.z]);
 
   useFrame(({ clock }) => {
@@ -157,7 +157,7 @@ const CabinetConnectionCurve: React.FC<{
   return (
     <group>
       <mesh raycast={disableRaycast}>
-        <tubeGeometry args={[cableCurve, 48, 0.052, 10, false]} />
+        <tubeGeometry args={[cableCurve, 72, 0.052, 10, false]} />
         <meshBasicMaterial
           ref={glowMaterialRef}
           color={line.color}
@@ -169,7 +169,7 @@ const CabinetConnectionCurve: React.FC<{
         />
       </mesh>
       <mesh raycast={disableRaycast}>
-        <tubeGeometry args={[cableCurve, 48, 0.012, 8, false]} />
+        <tubeGeometry args={[cableCurve, 72, 0.012, 8, false]} />
         <meshBasicMaterial
           ref={coreMaterialRef}
           color={line.color}
@@ -676,7 +676,9 @@ const ScreenCabinet3D: React.FC<{
   rotationY: number;
   hovered: boolean;
   selected: boolean;
+  showName: boolean;
   onHover: (cabinetId: string | null) => void;
+  onConnectionFocus: (cabinetId: string) => void;
   onSelect: (cabinetId: string) => void;
 }> = ({
   cabinet,
@@ -686,7 +688,9 @@ const ScreenCabinet3D: React.FC<{
   rotationY,
   hovered,
   selected,
+  showName,
   onHover,
+  onConnectionFocus,
   onSelect,
 }) => {
   const height = 2.72;
@@ -733,6 +737,11 @@ const ScreenCabinet3D: React.FC<{
       }}
       onClick={(event) => {
         event.stopPropagation();
+        onConnectionFocus(cabinet.id);
+      }}
+      onContextMenu={(event) => {
+        event.stopPropagation();
+        event.nativeEvent.preventDefault();
         onSelect(cabinet.id);
       }}
     >
@@ -855,30 +864,33 @@ const ScreenCabinet3D: React.FC<{
         position={[width / 2 - 0.08, height / 2 + 0.035, depth / 2 + 0.02]}
       />
 
-      <Billboard position={[0, height / 2 + 0.35, depth / 2 - 0.04]}>
-        <mesh raycast={disableRaycast}>
-          <boxGeometry args={[1.05, 0.28, 0.035]} />
-          <meshStandardMaterial
-            color="#062936"
-            emissive={color}
-            emissiveIntensity={0.22}
-            transparent
-            opacity={0.75}
-          />
-        </mesh>
-        <Text
-          raycast={disableRaycast}
-          position={[0, 0.005, 0.03]}
-          fontSize={0.15}
-          color={color}
-          anchorX="center"
-          anchorY="middle"
-          outlineWidth={0.005}
-          outlineColor="#00151d"
-        >
-          {cabinet.code || cabinet.name}
-        </Text>
-      </Billboard>
+      {showName && (
+        <Billboard position={[0, height / 2 + 0.35, depth / 2 - 0.04]}>
+          <mesh raycast={disableRaycast}>
+            <boxGeometry args={[1.3, 0.28, 0.035]} />
+            <meshStandardMaterial
+              color="#062936"
+              emissive={color}
+              emissiveIntensity={0.22}
+              transparent
+              opacity={0.75}
+            />
+          </mesh>
+          <Text
+            raycast={disableRaycast}
+            position={[0, 0.005, 0.03]}
+            fontSize={0.13}
+            color={color}
+            anchorX="center"
+            anchorY="middle"
+            outlineWidth={0.005}
+            outlineColor="#00151d"
+            maxWidth={1.18}
+          >
+            {cabinet.name || cabinet.code}
+          </Text>
+        </Billboard>
+      )}
 
       {selected && (
         <Billboard position={[0.75, 0.65, depth / 2 + 0.18]}>
@@ -939,9 +951,12 @@ export const ScreenDatacenterScene: React.FC<ScreenDatacenterSceneProps> = ({
   connections,
   connectionTypes,
   showConnections,
+  showCabinetNames,
+  enabledConnectionTypes,
 }) => {
   const [hoveredCabinetId, setHoveredCabinetId] = useState<string | null>(null);
   const [selectedCabinetId, setSelectedCabinetId] = useState<string | null>(null);
+  const [connectionFocusCabinetId, setConnectionFocusCabinetId] = useState<string | null>(null);
   const [activeCameraFacilityId, setActiveCameraFacilityId] = useState<string | null>(null);
   const floorSize = useMemo(
     () => ({
@@ -1058,13 +1073,17 @@ export const ScreenDatacenterScene: React.FC<ScreenDatacenterSceneProps> = ({
   }, [cabinetPositions, connectionTypes, connections, devices]);
   const filteredConnectionLines = useMemo(() => {
     if (!showConnections) return [];
-    if (!selectedCabinetId) return cabinetConnectionLines;
-    return cabinetConnectionLines.filter(
-      (line) =>
-        line.sourceCabinetId === selectedCabinetId ||
-        line.targetCabinetId === selectedCabinetId,
+    const enabledTypes = new Set(enabledConnectionTypes);
+    const visibleLines = cabinetConnectionLines.filter((line) =>
+      enabledTypes.has(line.connectionType),
     );
-  }, [cabinetConnectionLines, selectedCabinetId, showConnections]);
+    if (!connectionFocusCabinetId) return visibleLines;
+    return visibleLines.filter(
+      (line) =>
+        line.sourceCabinetId === connectionFocusCabinetId ||
+        line.targetCabinetId === connectionFocusCabinetId,
+    );
+  }, [cabinetConnectionLines, connectionFocusCabinetId, enabledConnectionTypes, showConnections]);
   const sceneView = useMemo(() => {
     const span = Math.max(floorSize.width, floorSize.height, 6);
     const distance = Math.min(Math.max(span * 0.62, 12), 48);
@@ -1182,6 +1201,7 @@ export const ScreenDatacenterScene: React.FC<ScreenDatacenterSceneProps> = ({
         receiveShadow
         onClick={() => {
           setSelectedCabinetId(null);
+          setConnectionFocusCabinetId(null);
           setActiveCameraFacilityId(null);
         }}
       >
@@ -1310,7 +1330,9 @@ export const ScreenDatacenterScene: React.FC<ScreenDatacenterSceneProps> = ({
             rotationY={rotationY}
             hovered={hoveredCabinetId === cabinet.id}
             selected={selectedCabinetId === cabinet.id}
+            showName={showCabinetNames}
             onHover={setHoveredCabinetId}
+            onConnectionFocus={setConnectionFocusCabinetId}
             onSelect={setSelectedCabinetId}
           />
         );
