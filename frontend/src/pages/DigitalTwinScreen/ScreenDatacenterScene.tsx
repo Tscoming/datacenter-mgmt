@@ -16,6 +16,9 @@ interface ScreenDatacenterSceneProps {
   cabinets: IDC.Cabinet[];
   devices: IDC.Device[];
   cabinetEnvironments: IDC.CabinetEnvironment[];
+  connections: IDC.Connection[];
+  connectionTypes: { value: string; label: string; color: string }[];
+  showConnections: boolean;
 }
 
 const statusColor: Record<string, string> = {
@@ -38,6 +41,21 @@ const disableRaycast = () => undefined;
 const CABINET_LAYOUT_WIDTH = 0.6;
 const CABINET_LAYOUT_DEPTH = 1.0;
 const AIRFLOW_PARTICLE_COUNT = 72;
+
+interface CabinetScenePosition {
+  x: number;
+  z: number;
+}
+
+interface CabinetConnectionLine {
+  id: string;
+  sourceCabinetId: string;
+  targetCabinetId: string;
+  connectionType: IDC.ConnectionType;
+  color: string;
+  index: number;
+  total: number;
+}
 
 const zoneColor = (type: IDC.LayoutZoneType) => {
   if (type === 'hot_aisle') return '#ff3d71';
@@ -92,6 +110,101 @@ const StatusLight: React.FC<{ color: string; alerting: boolean; position: [numbe
     </mesh>
   );
 };
+
+const CabinetConnectionCurve: React.FC<{
+  line: CabinetConnectionLine;
+  source: CabinetScenePosition;
+  target: CabinetScenePosition;
+}> = ({ line, source, target }) => {
+  const glowMaterialRef = useRef<THREE.MeshBasicMaterial>(null);
+  const coreMaterialRef = useRef<THREE.MeshBasicMaterial>(null);
+  const cableCurve = useMemo(() => {
+    const cabinetTopY = 2.72;
+    const start = new THREE.Vector3(source.x, cabinetTopY + 0.08, source.z);
+    const end = new THREE.Vector3(target.x, cabinetTopY + 0.08, target.z);
+    const direction = end.clone().sub(start);
+    const distance = Math.max(direction.length(), 0.1);
+    const normal = new THREE.Vector3(-direction.z, 0, direction.x).normalize();
+    const offset = (line.index - (line.total - 1) / 2) * 0.16;
+    const startPoint = start.clone().add(normal.clone().multiplyScalar(offset * 0.35));
+    const endPoint = end.clone().add(normal.clone().multiplyScalar(offset * 0.35));
+    const liftHeight = 0.62;
+    const elevatedStart = startPoint.clone().add(new THREE.Vector3(0, liftHeight, 0));
+    const elevatedEnd = endPoint.clone().add(new THREE.Vector3(0, liftHeight, 0));
+    const control = elevatedStart
+      .clone()
+      .lerp(elevatedEnd, 0.5)
+      .add(normal.clone().multiplyScalar(offset))
+      .add(new THREE.Vector3(0, Math.min(1.05, Math.max(0.35, distance * 0.12)), 0));
+    const path = new THREE.CurvePath<THREE.Vector3>();
+
+    path.add(new THREE.LineCurve3(startPoint, elevatedStart));
+    path.add(new THREE.QuadraticBezierCurve3(elevatedStart, control, elevatedEnd));
+    path.add(new THREE.LineCurve3(elevatedEnd, endPoint));
+
+    return path;
+  }, [line.index, line.total, source.x, source.z, target.x, target.z]);
+
+  useFrame(({ clock }) => {
+    if (glowMaterialRef.current) {
+      glowMaterialRef.current.opacity = 0.12 + Math.sin(clock.elapsedTime * 2 + line.index) * 0.035;
+    }
+    if (coreMaterialRef.current) {
+      coreMaterialRef.current.opacity = 0.78 + Math.sin(clock.elapsedTime * 3.4 + line.index) * 0.12;
+    }
+  });
+
+  return (
+    <group>
+      <mesh raycast={disableRaycast}>
+        <tubeGeometry args={[cableCurve, 48, 0.052, 10, false]} />
+        <meshBasicMaterial
+          ref={glowMaterialRef}
+          color={line.color}
+          transparent
+          opacity={0.14}
+          blending={THREE.AdditiveBlending}
+          depthWrite={false}
+          toneMapped={false}
+        />
+      </mesh>
+      <mesh raycast={disableRaycast}>
+        <tubeGeometry args={[cableCurve, 48, 0.012, 8, false]} />
+        <meshBasicMaterial
+          ref={coreMaterialRef}
+          color={line.color}
+          transparent
+          opacity={0.84}
+          blending={THREE.AdditiveBlending}
+          depthWrite={false}
+          toneMapped={false}
+        />
+      </mesh>
+    </group>
+  );
+};
+
+const CabinetConnectionLayer: React.FC<{
+  lines: CabinetConnectionLine[];
+  cabinetPositions: Map<string, CabinetScenePosition>;
+}> = ({ lines, cabinetPositions }) => (
+  <group>
+    {lines.map((line) => {
+      const source = cabinetPositions.get(line.sourceCabinetId);
+      const target = cabinetPositions.get(line.targetCabinetId);
+      if (!source || !target) return null;
+
+      return (
+        <CabinetConnectionCurve
+          key={line.id}
+          line={line}
+          source={source}
+          target={target}
+        />
+      );
+    })}
+  </group>
+);
 
 const AisleAirflow: React.FC<{ zone: IDC.DatacenterLayoutZoneItem }> = ({ zone }) => {
   const instancedRef = useRef<THREE.InstancedMesh>(null);
@@ -823,6 +936,9 @@ export const ScreenDatacenterScene: React.FC<ScreenDatacenterSceneProps> = ({
   cabinets,
   devices,
   cabinetEnvironments,
+  connections,
+  connectionTypes,
+  showConnections,
 }) => {
   const [hoveredCabinetId, setHoveredCabinetId] = useState<string | null>(null);
   const [selectedCabinetId, setSelectedCabinetId] = useState<string | null>(null);
@@ -856,6 +972,99 @@ export const ScreenDatacenterScene: React.FC<ScreenDatacenterSceneProps> = ({
     () => new Map(cabinetEnvironments.map((item) => [item.cabinetId, item] as const)),
     [cabinetEnvironments],
   );
+  const cabinetPositions = useMemo(() => {
+    const map = new Map<string, CabinetScenePosition>();
+    cabinets.forEach((cabinet) => {
+      const layoutItem = layoutByCabinetId.get(cabinet.id);
+      map.set(cabinet.id, {
+        x: layoutItem
+          ? layoutItem.x + CABINET_LAYOUT_WIDTH / 2
+          : (cabinet.column - 1) * 1.2 + CABINET_LAYOUT_WIDTH / 2,
+        z: layoutItem
+          ? layoutItem.y + CABINET_LAYOUT_DEPTH / 2
+          : (cabinet.row - 1) * 1.6 + CABINET_LAYOUT_DEPTH / 2,
+      });
+    });
+    return map;
+  }, [cabinets, layoutByCabinetId]);
+  const cabinetConnectionLines = useMemo(() => {
+    const deviceCabinetIdByDeviceId = new Map(
+      devices.map((device) => [device.id, device.cabinetId] as const),
+    );
+    const colorByConnectionType = new Map(
+      connectionTypes.map((item) => [item.value, item.color] as const),
+    );
+    const connectionByPairAndType = new Map<
+      string,
+      {
+        connection: IDC.Connection;
+        sourceCabinetId: string;
+        targetCabinetId: string;
+        pair: string;
+      }
+    >();
+
+    connections.forEach((connection) => {
+        const sourceCabinetId = deviceCabinetIdByDeviceId.get(connection.sourceDeviceId);
+        const targetCabinetId = deviceCabinetIdByDeviceId.get(connection.targetDeviceId);
+        if (
+          !sourceCabinetId ||
+          !targetCabinetId ||
+          sourceCabinetId === targetCabinetId ||
+          !cabinetPositions.has(sourceCabinetId) ||
+          !cabinetPositions.has(targetCabinetId)
+        ) {
+          return;
+        }
+
+        const pair = [sourceCabinetId, targetCabinetId].sort().join('__');
+        const key = `${pair}__${connection.connectionType}`;
+        if (connectionByPairAndType.has(key)) {
+          return;
+        }
+
+        connectionByPairAndType.set(key, {
+          connection,
+          sourceCabinetId,
+          targetCabinetId,
+          pair,
+        });
+    });
+
+    const linesByPair = new Map<string, number>();
+    Array.from(connectionByPairAndType.values()).forEach(({ pair }) => {
+      linesByPair.set(pair, (linesByPair.get(pair) || 0) + 1);
+    });
+    const indexByPair = new Map<string, number>();
+
+    return Array.from(connectionByPairAndType.values()).map(({
+      connection,
+      sourceCabinetId,
+      targetCabinetId,
+      pair,
+    }) => {
+      const index = indexByPair.get(pair) || 0;
+      indexByPair.set(pair, index + 1);
+      return {
+        id: `${pair}-${connection.connectionType}`,
+        sourceCabinetId,
+        targetCabinetId,
+        connectionType: connection.connectionType,
+        color: colorByConnectionType.get(connection.connectionType) || connection.cableColor || '#00eaff',
+        index,
+        total: linesByPair.get(pair) || 1,
+      };
+    });
+  }, [cabinetPositions, connectionTypes, connections, devices]);
+  const filteredConnectionLines = useMemo(() => {
+    if (!showConnections) return [];
+    if (!selectedCabinetId) return cabinetConnectionLines;
+    return cabinetConnectionLines.filter(
+      (line) =>
+        line.sourceCabinetId === selectedCabinetId ||
+        line.targetCabinetId === selectedCabinetId,
+    );
+  }, [cabinetConnectionLines, selectedCabinetId, showConnections]);
   const sceneView = useMemo(() => {
     const span = Math.max(floorSize.width, floorSize.height, 6);
     const distance = Math.min(Math.max(span * 0.62, 12), 48);
@@ -1079,14 +1288,17 @@ export const ScreenDatacenterScene: React.FC<ScreenDatacenterSceneProps> = ({
         );
       })}
 
+      {showConnections && (
+        <CabinetConnectionLayer
+          lines={filteredConnectionLines}
+          cabinetPositions={cabinetPositions}
+        />
+      )}
+
       {cabinets.map((cabinet) => {
         const layoutItem = layoutByCabinetId.get(cabinet.id);
-        const x = layoutItem
-          ? layoutItem.x + CABINET_LAYOUT_WIDTH / 2
-          : (cabinet.column - 1) * 1.2 + CABINET_LAYOUT_WIDTH / 2;
-        const z = layoutItem
-          ? layoutItem.y + CABINET_LAYOUT_DEPTH / 2
-          : (cabinet.row - 1) * 1.6 + CABINET_LAYOUT_DEPTH / 2;
+        const position = cabinetPositions.get(cabinet.id);
+        if (!position) return null;
         const rotationY = (((layoutItem?.rotation || 0) * Math.PI) / 180);
         return (
           <ScreenCabinet3D
@@ -1094,7 +1306,7 @@ export const ScreenDatacenterScene: React.FC<ScreenDatacenterSceneProps> = ({
             cabinet={cabinet}
             devices={devicesByCabinetId.get(cabinet.id) || []}
             environment={envByCabinetId.get(cabinet.id)}
-            position={[x, 1.36, z]}
+            position={[position.x, 1.36, position.z]}
             rotationY={rotationY}
             hovered={hoveredCabinetId === cabinet.id}
             selected={selectedCabinetId === cabinet.id}

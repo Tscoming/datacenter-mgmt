@@ -1,7 +1,7 @@
 import { Area, Line } from '@ant-design/charts';
 import { Canvas } from '@react-three/fiber';
 import { history } from '@umijs/max';
-import { Button, Select } from 'antd';
+import { Button, Select, Switch } from 'antd';
 import {
   AlertTriangle,
   ArrowLeft,
@@ -20,6 +20,10 @@ import {
 } from 'lucide-react';
 import { Suspense, useEffect, useMemo, useState } from 'react';
 import { getCabinetsByDatacenter } from '@/services/idc/cabinet';
+import {
+  getConnectionsByDatacenter,
+  getConnectionTypes,
+} from '@/services/idc/connection';
 import { getDatacenter, getAllDatacenters } from '@/services/idc/datacenter';
 import { getDevices } from '@/services/idc/device';
 import { getCabinetEnvironments } from '@/services/idc/environment';
@@ -32,6 +36,7 @@ import { ScreenDatacenterScene } from './ScreenDatacenterScene';
 import styles from './index.less';
 
 type ScreenDatacenterOption = { id: string; name: string; code: string };
+type ScreenConnectionType = { value: string; label: string; color: string };
 
 const chartTheme = {
   styleSheet: {
@@ -178,14 +183,20 @@ const loadDevicesByDatacenter = async (datacenterId: string) => {
 const loadScreenSceneData = async (
   baseData: DigitalTwinScreenData,
   selectedDatacenterId: string,
-): Promise<DigitalTwinScreenData> => {
-  const [datacenterRes, cabinetRes, layoutRes, devices, envRes] =
+): Promise<{
+  data: DigitalTwinScreenData;
+  connections: IDC.Connection[];
+  connectionTypes: ScreenConnectionType[];
+}> => {
+  const [datacenterRes, cabinetRes, layoutRes, devices, envRes, connectionRes, connectionTypeRes] =
     await Promise.all([
       getDatacenter(selectedDatacenterId),
       getCabinetsByDatacenter(selectedDatacenterId),
       getDatacenterLayout(selectedDatacenterId),
       loadDevicesByDatacenter(selectedDatacenterId),
       getCabinetEnvironments(),
+      getConnectionsByDatacenter(selectedDatacenterId),
+      getConnectionTypes(),
     ]);
 
   if (!datacenterRes.success || !datacenterRes.data) {
@@ -200,18 +211,28 @@ const loadScreenSceneData = async (
   if (!envRes.success || !envRes.data) {
     throw new Error('Failed to load cabinet environment data.');
   }
+  if (!connectionRes.success || !connectionRes.data) {
+    throw new Error('Failed to load datacenter connection data.');
+  }
+  if (!connectionTypeRes.success || !connectionTypeRes.data) {
+    throw new Error('Failed to load connection type data.');
+  }
 
   const cabinetEnvironments = (envRes.data || []).filter(
     (item) => item.datacenterId === selectedDatacenterId,
   );
 
   return {
-    ...baseData,
-    datacenter: datacenterRes.data,
-    layout: layoutRes.data,
-    cabinets: cabinetRes.data,
-    devices,
-    cabinetEnvironments,
+    data: {
+      ...baseData,
+      datacenter: datacenterRes.data,
+      layout: layoutRes.data,
+      cabinets: cabinetRes.data,
+      devices,
+      cabinetEnvironments,
+    },
+    connections: connectionRes.data,
+    connectionTypes: connectionTypeRes.data,
   };
 };
 
@@ -236,7 +257,7 @@ const loadDigitalTwinScreenData = async (datacenterId?: string) => {
   return {
     datacenters: dcListRes.data,
     selectedDatacenterId,
-    data: await loadScreenSceneData(screenRes.data, selectedDatacenterId),
+    ...(await loadScreenSceneData(screenRes.data, selectedDatacenterId)),
   };
 };
 
@@ -245,6 +266,9 @@ const DigitalTwinScreen: React.FC = () => {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [datacenters, setDatacenters] = useState<ScreenDatacenterOption[]>([]);
   const [selectedDatacenterId, setSelectedDatacenterId] = useState<string>();
+  const [connections, setConnections] = useState<IDC.Connection[]>([]);
+  const [connectionTypes, setConnectionTypes] = useState<ScreenConnectionType[]>([]);
+  const [showConnections, setShowConnections] = useState(false);
   const [currentTime, setCurrentTime] = useState(new Date());
 
   useEffect(() => {
@@ -257,12 +281,16 @@ const DigitalTwinScreen: React.FC = () => {
           setDatacenters(result.datacenters);
           setSelectedDatacenterId(result.selectedDatacenterId);
           setData(result.data);
+          setConnections(result.connections);
+          setConnectionTypes(result.connectionTypes);
           setErrorMessage(null);
         }
       } catch (error) {
         console.error('Failed to load digital twin screen scene data:', error);
         if (!cancelled) {
           setData(null);
+          setConnections([]);
+          setConnectionTypes([]);
           setErrorMessage(error instanceof Error ? error.message : 'Failed to load digital twin screen scene data.');
         }
       }
@@ -284,9 +312,13 @@ const DigitalTwinScreen: React.FC = () => {
       setDatacenters(result.datacenters);
       setSelectedDatacenterId(result.selectedDatacenterId);
       setData(result.data);
+      setConnections(result.connections);
+      setConnectionTypes(result.connectionTypes);
     } catch (error) {
       console.error('Failed to load digital twin screen scene data:', error);
       setData(null);
+      setConnections([]);
+      setConnectionTypes([]);
       setErrorMessage(error instanceof Error ? error.message : 'Failed to load digital twin screen scene data.');
     }
   };
@@ -463,6 +495,14 @@ const DigitalTwinScreen: React.FC = () => {
             <span>Draw Calls: <b>{data.cabinets.length * 12}</b></span>
             <span>Cabinets: <b>{data.cabinets.length}</b></span>
           </div>
+          <div className={styles.connectionSwitch}>
+            <Switch
+              size="small"
+              checked={showConnections}
+              onChange={setShowConnections}
+            />
+            <span>显示连线关系</span>
+          </div>
           <Canvas shadows dpr={[1, 2]} className={styles.sceneCanvas}>
             <Suspense fallback={null}>
               <ScreenDatacenterScene
@@ -470,6 +510,9 @@ const DigitalTwinScreen: React.FC = () => {
                 cabinets={data.cabinets}
                 devices={data.devices}
                 cabinetEnvironments={data.cabinetEnvironments}
+                connections={connections}
+                connectionTypes={connectionTypes}
+                showConnections={showConnections}
               />
             </Suspense>
           </Canvas>
