@@ -21,7 +21,7 @@ const mockModulePaths = [
 ];
 
 export const loadMockRouteModules = () => {
-  const modulePaths =
+  const dataSourceModulePaths =
     getApiDataSource() === 'database'
       ? [
           './databaseAuthRoutes',
@@ -32,6 +32,7 @@ export const loadMockRouteModules = () => {
           './databaseUserRoutes',
         ]
       : mockModulePaths;
+  const modulePaths = [...dataSourceModulePaths, './telemetryRoutes'];
 
   return modulePaths.map((modulePath) => {
     const routeModule = require(modulePath);

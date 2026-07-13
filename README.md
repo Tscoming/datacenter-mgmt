@@ -116,6 +116,49 @@ API data source: database
 Database: postgres@ubuntu.home.lab:5432/mydb schema=dcim_ontology_demo_20260623083835
 ```
 
+## 机柜遥测采集与实时推送
+
+后端可以从 Modbus TCP 机柜采集 HR0～HR19 和 C0～C7，将最新值保存在内存中，并通过 SSE 推送到数字孪生大屏。首期不写入 PostgreSQL，后端重启后不会保留历史遥测。
+
+机柜与采集端点的绑定在“资源管理 → 机柜管理 → 编辑 → 遥测采集配置”中单独维护和保存。数据库模式下配置持久化到 `cabinet_telemetry_source` 表，保存后采集服务会立即重载，不需要重启后端。高低频周期仍由根目录 `.env` 统一配置：
+
+```dotenv
+CABINET_TELEMETRY_LOW_FREQUENCY_SECONDS=60
+CABINET_TELEMETRY_HIGH_FREQUENCY_SECONDS=2
+```
+
+`CABINET_TELEMETRY_SOURCES` 仅作为已有部署升级时的可选引导配置：首次启动会写入尚未配置的机柜，不会覆盖管理页面已经保存的配置。
+
+采集采用混合频率模式：没有打开机柜概要卡时按低频周期采集；打开某个机柜概要卡后，仅该机柜切换为高频采集；关闭后恢复低频。两个周期都在 `.env` 中配置，单位为秒。高频周期不能大于低频周期，端点 `timeoutMs` 必须小于高频周期对应的毫秒数。
+
+当前配置将仿真端点 `192.168.244.144:1502` 绑定到“北京亦庄数据中心 / A区1排1号机柜”（`cab-bj-001`）。Modbus HR0 是设备侧本地编号，不作为系统关联主键；系统关联始终以配置中的 `cabinetId` 为准。
+
+增加多个机柜时，分别进入对应机柜的“遥测采集配置”页签保存端点信息。每个机柜最多绑定一个采集源，采集源标识必须全局唯一；新配置缺省使用 `<机柜编码>-Telemery`。可使用以下接口维护和检查配置：
+
+```text
+GET /api/idc/telemetry/sources
+GET /api/idc/telemetry/sources?datacenterId=dc-001
+GET /api/idc/cabinets/:cabinetId/telemetry-source
+PUT /api/idc/cabinets/:cabinetId/telemetry-source
+DELETE /api/idc/cabinets/:cabinetId/telemetry-source
+POST /api/idc/cabinets/:cabinetId/telemetry-source/test
+GET /api/idc/telemetry/cabinets/:cabinetId
+GET /api/idc/telemetry/cabinets/:cabinetId/high-frequency-stream
+DELETE /api/idc/telemetry/cabinets/:cabinetId/high-frequency-subscriptions/:subscriptionId
+GET /api/idc/telemetry/stream?datacenterId=dc-001
+```
+
+“遥测采集配置”页签提供“测试遥测数据采集”按钮。测试使用当前表单值且不会保存配置；结果弹窗立即采集一次，之后每隔 2 秒刷新，并按接口返回的数据结构动态展示全部字段。
+
+命令行验证：
+
+```bash
+curl http://127.0.0.1:8008/api/idc/telemetry/sources
+curl -N http://127.0.0.1:8008/api/idc/telemetry/stream?datacenterId=dc-001
+```
+
+数字孪生大屏会自动订阅 SSE，并按 `cabinetId` 更新对应机柜的温湿度、功率、在线状态和告警颜色。右键单击 3D 机柜可查看实时电压、电流、负载、门状态、告警码和更新时间。采集失败时，大屏顶部会显示采集降级，已绑定机柜显示为离线，并在详情中展示端点和错误原因。
+
 ## Ontology 数据模型与迁移
 
 本项目已基于 `design/` 中的 Ontology 设计，将原始 mock 数据迁移到 PostgreSQL 独立 schema：

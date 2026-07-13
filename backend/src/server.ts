@@ -3,6 +3,10 @@ import { loadEnv } from './env';
 import { loadMockRouteModules } from './mockRoutes';
 import { requestLogger } from './requestLogger';
 import { registerMockRoutes } from './registerMockRoutes';
+import {
+  startCabinetTelemetryService,
+  stopCabinetTelemetryService,
+} from './telemetry/cabinetTelemetryService';
 
 loadEnv();
 
@@ -33,6 +37,9 @@ app.get('/health', (_req, res) => {
 });
 
 const routeCount = registerMockRoutes(app, loadMockRouteModules());
+void startCabinetTelemetryService().catch((error) => {
+  console.error('[telemetry] Failed to start cabinet telemetry service:', error);
+});
 
 app.use((req, res) => {
   res.status(404).json({
@@ -62,6 +69,7 @@ const shutdown = (signal: NodeJS.Signals) => {
   shuttingDown = true;
 
   console.log(`Received ${signal}; closing backend API server...`);
+  stopCabinetTelemetryService();
   server.close((error) => {
     if (error) {
       console.error(error);

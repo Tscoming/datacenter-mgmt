@@ -1,4 +1,5 @@
 import { request } from '@umijs/max';
+import type { CabinetTelemetry, CabinetTelemetrySourceConfig } from './telemetry';
 
 /** 获取机柜列表 */
 export async function getCabinets(
@@ -66,4 +67,42 @@ export async function getCabinetUUsage(id: string) {
     }>>(`/api/idc/cabinets/${id}/u-usage`, {
         method: 'GET',
     });
+}
+
+/** 获取机柜遥测采集配置 */
+export async function getCabinetTelemetrySource(id: string) {
+    return request<IDC.ApiResponse<CabinetTelemetrySourceConfig | null>>(
+        `/api/idc/cabinets/${id}/telemetry-source`,
+        { method: 'GET' },
+    );
+}
+
+/** 单独保存机柜遥测采集配置 */
+export async function saveCabinetTelemetrySource(
+    id: string,
+    data: Omit<CabinetTelemetrySourceConfig, 'cabinetId'>,
+) {
+    return request<IDC.ApiResponse<CabinetTelemetrySourceConfig>>(
+        `/api/idc/cabinets/${id}/telemetry-source`,
+        { method: 'PUT', data },
+    );
+}
+
+/** 使用当前表单配置单次测试机柜遥测采集，不保存配置 */
+export async function testCabinetTelemetrySource(
+    id: string,
+    data: Omit<CabinetTelemetrySourceConfig, 'cabinetId'>,
+) {
+    return request<IDC.ApiResponse<CabinetTelemetry>>(
+        `/api/idc/cabinets/${id}/telemetry-source/test`,
+        { method: 'POST', data },
+    );
+}
+
+/** 删除机柜遥测采集配置 */
+export async function deleteCabinetTelemetrySource(id: string) {
+    return request<IDC.ApiResponse<{ deleted: boolean }>>(
+        `/api/idc/cabinets/${id}/telemetry-source`,
+        { method: 'DELETE' },
+    );
 }

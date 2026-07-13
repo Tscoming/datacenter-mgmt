@@ -1,0 +1,466 @@
+[
+  {
+    "id": "f2b7188aa10e3c01",
+    "type": "tab",
+    "label": "机柜 Modbus TCP 仿真器",
+    "disabled": false,
+    "info": "## Modbus TCP\n- 监听端口：1502\n- Unit ID：1\n- Holding Registers：FC03读取，HR0～HR19\n- Coils：FC01读取，C0～C7\n- Node-RED内部通过FC16/FC15周期写入\n\n## 地址显示差异\n本流程使用零基地址：\n- HR0 在部分SCADA软件中显示为 40001\n- C0 在部分SCADA软件中显示为 00001\n\n## Holding Registers\nHR0 机柜ID\nHR1 柜内温度×10\nHR2 湿度×10\nHR3 电压×10\nHR4 电流×100\nHR5 有功功率W\nHR6 视在功率VA\nHR7 累计电能低16位×10\nHR8 风扇RPM\nHR9 开门次数\nHR10 告警位掩码\nHR11 负载率×10\nHR12 进风温度×10\nHR13 出风温度×10\nHR14/15 运行秒数高/低字\nHR16 额定功率W\nHR17 高温阈值×10\nHR18 高湿阈值×10\nHR19 模型版本\n\n## Coils\nC0 在线\nC1 门打开\nC2 烟感\nC3 水浸\nC4 电源告警\nC5 风扇告警\nC6 严重告警\nC7 维护模式",
+    "env": []
+  },
+  {
+    "id": "6a20de0a33210610",
+    "type": "comment",
+    "z": "f2b7188aa10e3c01",
+    "name": "机柜 Modbus TCP Server：端口1502 / Unit ID 1",
+    "info": "## Modbus TCP\n- 监听端口：1502\n- Unit ID：1\n- Holding Registers：FC03读取，HR0～HR19\n- Coils：FC01读取，C0～C7\n- Node-RED内部通过FC16/FC15周期写入\n\n## 地址显示差异\n本流程使用零基地址：\n- HR0 在部分SCADA软件中显示为 40001\n- C0 在部分SCADA软件中显示为 00001\n\n## Holding Registers\nHR0 机柜ID\nHR1 柜内温度×10\nHR2 湿度×10\nHR3 电压×10\nHR4 电流×100\nHR5 有功功率W\nHR6 视在功率VA\nHR7 累计电能低16位×10\nHR8 风扇RPM\nHR9 开门次数\nHR10 告警位掩码\nHR11 负载率×10\nHR12 进风温度×10\nHR13 出风温度×10\nHR14/15 运行秒数高/低字\nHR16 额定功率W\nHR17 高温阈值×10\nHR18 高湿阈值×10\nHR19 模型版本\n\n## Coils\nC0 在线\nC1 门打开\nC2 烟感\nC3 水浸\nC4 电源告警\nC5 风扇告警\nC6 严重告警\nC7 维护模式",
+    "x": 300,
+    "y": 60,
+    "wires": []
+  },
+  {
+    "id": "36dfba0d890a3d79",
+    "type": "modbus-server",
+    "z": "f2b7188aa10e3c01",
+    "name": "Rack Modbus Server :1502",
+    "logEnabled": false,
+    "hostname": "0.0.0.0",
+    "serverPort": 1502,
+    "responseDelay": 10,
+    "delayUnit": "ms",
+    "coilsBufferSize": 1000,
+    "holdingBufferSize": 1000,
+    "inputBufferSize": 1000,
+    "x": 290,
+    "y": 120,
+    "wires": [
+      [
+        "e87c9fed5ef0f4a1"
+      ],
+      [
+        "e87c9fed5ef0f4a1"
+      ],
+      [
+        "e87c9fed5ef0f4a1"
+      ],
+      [
+        "e87c9fed5ef0f4a1"
+      ],
+      [
+        "e87c9fed5ef0f4a1"
+      ]
+    ],
+    "discreteBufferSize": 1000,
+    "showErrors": true,
+    "showStatusActivities": true
+  },
+  {
+    "id": "e87c9fed5ef0f4a1",
+    "type": "debug",
+    "z": "f2b7188aa10e3c01",
+    "name": "Server事件（默认关闭）",
+    "active": false,
+    "tosidebar": true,
+    "console": false,
+    "tostatus": false,
+    "complete": "true",
+    "targetType": "full",
+    "statusVal": "",
+    "statusType": "auto",
+    "x": 570,
+    "y": 120,
+    "wires": []
+  },
+  {
+    "id": "283c39ea67ffb159",
+    "type": "inject",
+    "z": "f2b7188aa10e3c01",
+    "name": "每2秒生成机柜数据",
+    "props": [
+      {
+        "p": "payload"
+      },
+      {
+        "p": "topic",
+        "vt": "str"
+      }
+    ],
+    "repeat": "2",
+    "crontab": "",
+    "once": true,
+    "onceDelay": "3",
+    "topic": "",
+    "payload": "",
+    "payloadType": "date",
+    "x": 160,
+    "y": 240,
+    "wires": [
+      [
+        "7e751e8a7f4207d2"
+      ]
+    ]
+  },
+  {
+    "id": "7e751e8a7f4207d2",
+    "type": "function",
+    "z": "f2b7188aa10e3c01",
+    "name": "生成机柜遥测与Modbus报文",
+    "func": "// 智能机柜 Modbus 数据仿真器\n// 输出1：Holding Registers，FC16，地址0开始\n// 输出2：Coils，FC15，地址0开始\n// 输出3：便于调试查看的结构化对象\n\nconst now = Date.now();\nlet s = context.get(\"rackState\");\n\nif (!s) {\n    s = {\n        startedAt: now,\n        lastAt: now,\n        cabinetId: 1,\n        temperature: 24.5,\n        humidity: 45.0,\n        inletTemp: 22.8,\n        outletTemp: 27.2,\n        voltage: 220.0,\n        current: 3.20,\n        energyKwh: 1250.0,\n        fanRpm: 1800,\n        doorOpenCount: 0,\n        doorOpen: false,\n        smokeAlarm: false,\n        waterLeak: false,\n        powerAlarm: false,\n        fanAlarm: false,\n        maintenanceMode: false\n    };\n}\n\nconst dtSeconds = Math.max(0.1, (now - s.lastAt) / 1000);\ns.lastAt = now;\n\nconst rand = (min, max) => min + Math.random() * (max - min);\nconst clamp = (v, min, max) => Math.min(max, Math.max(min, v));\n\n// 小幅随机游走，使数据看起来像真实设备，而不是完全独立的随机数\ns.temperature = clamp(s.temperature + rand(-0.18, 0.18), 20.0, 38.0);\ns.humidity = clamp(s.humidity + rand(-0.35, 0.35), 30.0, 75.0);\ns.inletTemp = clamp(s.temperature - rand(1.0, 2.5), 18.0, 36.0);\ns.outletTemp = clamp(s.temperature + rand(1.5, 4.0), 20.0, 45.0);\ns.voltage = clamp(s.voltage + rand(-0.8, 0.8), 205.0, 240.0);\ns.current = clamp(s.current + rand(-0.12, 0.12), 0.5, 12.0);\ns.fanRpm = Math.round(clamp(s.fanRpm + rand(-45, 45), 800, 3200));\n\nconst activePowerW = Math.round(s.voltage * s.current * 0.92);\nconst apparentPowerVA = Math.round(s.voltage * s.current);\nconst loadPercent = clamp((activePowerW / 3000) * 100, 0, 100);\ns.energyKwh += (activePowerW * dtSeconds) / 3600000;\n\n// 低概率模拟门开关；告警默认由测量值推导\nif (Math.random() < 0.01) {\n    s.doorOpen = !s.doorOpen;\n    if (s.doorOpen) s.doorOpenCount++;\n}\n\nconst online = true;\nconst highTemp = s.temperature >= 35.0;\nconst highHumidity = s.humidity >= 70.0;\nconst overload = loadPercent >= 90.0;\n\n// 位掩码：bit0高温、bit1高湿、bit2烟感、bit3水浸、bit4电源、bit5风扇、bit6过载\nconst alarmCode =\n      (highTemp       ? 1  : 0)\n    | (highHumidity   ? 2  : 0)\n    | (s.smokeAlarm   ? 4  : 0)\n    | (s.waterLeak    ? 8  : 0)\n    | (s.powerAlarm   ? 16 : 0)\n    | (s.fanAlarm     ? 32 : 0)\n    | (overload       ? 64 : 0);\n\nconst uptimeSeconds = Math.floor((now - s.startedAt) / 1000);\n\n// Holding Registers，均为16位无符号整数\nconst registers = [\n    s.cabinetId,                         // HR0  机柜ID\n    Math.round(s.temperature * 10),      // HR1  柜内温度，0.1°C\n    Math.round(s.humidity * 10),         // HR2  湿度，0.1%RH\n    Math.round(s.voltage * 10),          // HR3  电压，0.1V\n    Math.round(s.current * 100),         // HR4  电流，0.01A\n    activePowerW,                        // HR5  有功功率，W\n    apparentPowerVA,                     // HR6  视在功率，VA\n    Math.round(s.energyKwh * 10) % 65536,// HR7  累计电能低16位，0.1kWh\n    s.fanRpm,                            // HR8  风扇转速，RPM\n    s.doorOpenCount % 65536,             // HR9  开门累计次数\n    alarmCode,                           // HR10 综合告警位掩码\n    Math.round(loadPercent * 10),        // HR11 负载率，0.1%\n    Math.round(s.inletTemp * 10),        // HR12 进风温度，0.1°C\n    Math.round(s.outletTemp * 10),       // HR13 出风温度，0.1°C\n    (uptimeSeconds >>> 16) & 0xffff,     // HR14 运行时间高16位\n    uptimeSeconds & 0xffff,              // HR15 运行时间低16位\n    3000,                                // HR16 额定功率，W\n    350,                                 // HR17 高温阈值，0.1°C\n    700,                                 // HR18 高湿阈值，0.1%RH\n    1                                    // HR19 数据模型版本\n];\n\nconst coils = [\n    online,                 // C0 在线\n    s.doorOpen,             // C1 门打开\n    s.smokeAlarm,           // C2 烟感告警\n    s.waterLeak,            // C3 水浸告警\n    s.powerAlarm,           // C4 电源告警\n    s.fanAlarm,             // C5 风扇告警\n    highTemp || overload,   // C6 环境/负载严重告警\n    s.maintenanceMode       // C7 维护模式\n];\n\ncontext.set(\"rackState\", s);\n\nconst registerMsg = {\n    topic: \"rack/holding-registers\",\n    payload: {\n        value: registers,\n        fc: 16,\n        unitid: 1,\n        address: 0,\n        quantity: registers.length\n    }\n};\n\nconst coilMsg = {\n    topic: \"rack/coils\",\n    payload: {\n        value: coils,\n        fc: 15,\n        unitid: 1,\n        address: 0,\n        quantity: coils.length\n    }\n};\n\nconst viewMsg = {\n    topic: \"rack/telemetry\",\n    payload: {\n        timestamp: new Date(now).toISOString(),\n        cabinetId: s.cabinetId,\n        temperatureC: Number(s.temperature.toFixed(1)),\n        humidityRH: Number(s.humidity.toFixed(1)),\n        inletTemperatureC: Number(s.inletTemp.toFixed(1)),\n        outletTemperatureC: Number(s.outletTemp.toFixed(1)),\n        voltageV: Number(s.voltage.toFixed(1)),\n        currentA: Number(s.current.toFixed(2)),\n        activePowerW,\n        apparentPowerVA,\n        energyKwh: Number(s.energyKwh.toFixed(1)),\n        loadPercent: Number(loadPercent.toFixed(1)),\n        fanRpm: s.fanRpm,\n        doorOpen: s.doorOpen,\n        alarmCode,\n        coils,\n        registers\n    }\n};\n\nreturn [registerMsg, coilMsg, viewMsg];",
+    "outputs": 3,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 430,
+    "y": 240,
+    "wires": [
+      [
+        "334df04cbb11de8a"
+      ],
+      [
+        "15b659717457d750"
+      ],
+      [
+        "12534d0ea29cb8ad"
+      ]
+    ]
+  },
+  {
+    "id": "334df04cbb11de8a",
+    "type": "modbus-flex-write",
+    "z": "f2b7188aa10e3c01",
+    "name": "写HR0-HR19 (FC16)",
+    "showStatusActivities": true,
+    "showErrors": true,
+    "showWarnings": true,
+    "server": "dfb53216682ba1c2",
+    "emptyMsgOnFail": false,
+    "keepMsgProperties": true,
+    "delayOnStart": false,
+    "startDelayTime": "",
+    "x": 750,
+    "y": 210,
+    "wires": [
+      [],
+      [
+        "33f4df519813ced6"
+      ]
+    ]
+  },
+  {
+    "id": "15b659717457d750",
+    "type": "modbus-flex-write",
+    "z": "f2b7188aa10e3c01",
+    "name": "写C0-C7 (FC15)",
+    "showStatusActivities": true,
+    "showErrors": true,
+    "showWarnings": true,
+    "server": "dfb53216682ba1c2",
+    "emptyMsgOnFail": false,
+    "keepMsgProperties": true,
+    "delayOnStart": false,
+    "startDelayTime": "",
+    "x": 740,
+    "y": 260,
+    "wires": [
+      [],
+      [
+        "33f4df519813ced6"
+      ]
+    ]
+  },
+  {
+    "id": "12534d0ea29cb8ad",
+    "type": "debug",
+    "z": "f2b7188aa10e3c01",
+    "name": "机柜结构化遥测",
+    "active": true,
+    "tosidebar": true,
+    "console": false,
+    "tostatus": false,
+    "complete": "payload",
+    "targetType": "msg",
+    "statusVal": "",
+    "statusType": "auto",
+    "x": 750,
+    "y": 310,
+    "wires": []
+  },
+  {
+    "id": "33f4df519813ced6",
+    "type": "debug",
+    "z": "f2b7188aa10e3c01",
+    "name": "Modbus原始响应（非错误，默认关闭）",
+    "active": false,
+    "tosidebar": true,
+    "console": false,
+    "tostatus": false,
+    "complete": "true",
+    "targetType": "full",
+    "statusVal": "",
+    "statusType": "auto",
+    "x": 1010,
+    "y": 240,
+    "wires": []
+  },
+  {
+    "id": "0a8e0ce422c5e516",
+    "type": "comment",
+    "z": "f2b7188aa10e3c01",
+    "name": "本地自检：读取HR0-HR19与C0-C7",
+    "info": "部署后等待约6秒，调试窗口会显示读取并解析后的机柜数据。",
+    "x": 230,
+    "y": 390,
+    "wires": []
+  },
+  {
+    "id": "2aeb42dad95fdf7a",
+    "type": "inject",
+    "z": "f2b7188aa10e3c01",
+    "name": "每5秒读取HR",
+    "props": [
+      {
+        "p": "payload"
+      },
+      {
+        "p": "topic",
+        "vt": "str"
+      }
+    ],
+    "repeat": "5",
+    "crontab": "",
+    "once": true,
+    "onceDelay": "6",
+    "topic": "read/holding-registers",
+    "payload": "{\"value\":0,\"fc\":3,\"unitid\":1,\"address\":0,\"quantity\":20}",
+    "payloadType": "json",
+    "x": 150,
+    "y": 450,
+    "wires": [
+      [
+        "9a7cffb19af136cf"
+      ]
+    ]
+  },
+  {
+    "id": "9a7cffb19af136cf",
+    "type": "modbus-flex-getter",
+    "z": "f2b7188aa10e3c01",
+    "name": "读取HR0-HR19",
+    "showStatusActivities": true,
+    "showErrors": true,
+    "showWarnings": true,
+    "logIOActivities": false,
+    "server": "dfb53216682ba1c2",
+    "useIOFile": false,
+    "ioFile": "",
+    "useIOForPayload": false,
+    "emptyMsgOnFail": false,
+    "keepMsgProperties": true,
+    "delayOnStart": false,
+    "startDelayTime": "",
+    "x": 390,
+    "y": 450,
+    "wires": [
+      [
+        "65fc592dd2316cbe"
+      ],
+      [
+        "33f4df519813ced6"
+      ]
+    ]
+  },
+  {
+    "id": "65fc592dd2316cbe",
+    "type": "function",
+    "z": "f2b7188aa10e3c01",
+    "name": "解析机柜HR",
+    "func": "const p = msg.payload || {};\nconst data = Array.isArray(p.data) ? p.data :\n             Array.isArray(p) ? p :\n             (Array.isArray(msg.data) ? msg.data : []);\n\nif (data.length < 20) {\n    msg.payload = { error: \"Holding Register返回长度不足\", raw: msg.payload };\n    return msg;\n}\n\nconst uptimeSeconds = ((data[14] << 16) >>> 0) + data[15];\n\nmsg.payload = {\n    cabinetId: data[0],\n    temperatureC: data[1] / 10,\n    humidityRH: data[2] / 10,\n    voltageV: data[3] / 10,\n    currentA: data[4] / 100,\n    activePowerW: data[5],\n    apparentPowerVA: data[6],\n    energyLowWordKwh: data[7] / 10,\n    fanRpm: data[8],\n    doorOpenCount: data[9],\n    alarmCode: data[10],\n    loadPercent: data[11] / 10,\n    inletTemperatureC: data[12] / 10,\n    outletTemperatureC: data[13] / 10,\n    uptimeSeconds,\n    ratedPowerW: data[16],\n    highTemperatureThresholdC: data[17] / 10,\n    highHumidityThresholdRH: data[18] / 10,\n    modelVersion: data[19]\n};\nreturn msg;",
+    "outputs": 1,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 610,
+    "y": 450,
+    "wires": [
+      [
+        "58ba6e061d66c0fc"
+      ]
+    ]
+  },
+  {
+    "id": "58ba6e061d66c0fc",
+    "type": "debug",
+    "z": "f2b7188aa10e3c01",
+    "name": "HR自检结果",
+    "active": true,
+    "tosidebar": true,
+    "console": false,
+    "tostatus": false,
+    "complete": "payload",
+    "targetType": "msg",
+    "statusVal": "",
+    "statusType": "auto",
+    "x": 830,
+    "y": 450,
+    "wires": []
+  },
+  {
+    "id": "be6df2c643f356ee",
+    "type": "inject",
+    "z": "f2b7188aa10e3c01",
+    "name": "每5秒读取Coils",
+    "props": [
+      {
+        "p": "payload"
+      },
+      {
+        "p": "topic",
+        "vt": "str"
+      }
+    ],
+    "repeat": "5",
+    "crontab": "",
+    "once": true,
+    "onceDelay": "6.5",
+    "topic": "read/coils",
+    "payload": "{\"value\":0,\"fc\":1,\"unitid\":1,\"address\":0,\"quantity\":8}",
+    "payloadType": "json",
+    "x": 160,
+    "y": 510,
+    "wires": [
+      [
+        "c43c6931d01440fb"
+      ]
+    ]
+  },
+  {
+    "id": "c43c6931d01440fb",
+    "type": "modbus-flex-getter",
+    "z": "f2b7188aa10e3c01",
+    "name": "读取C0-C7",
+    "showStatusActivities": true,
+    "showErrors": true,
+    "showWarnings": true,
+    "logIOActivities": false,
+    "server": "dfb53216682ba1c2",
+    "useIOFile": false,
+    "ioFile": "",
+    "useIOForPayload": false,
+    "emptyMsgOnFail": false,
+    "keepMsgProperties": true,
+    "delayOnStart": false,
+    "startDelayTime": "",
+    "x": 380,
+    "y": 510,
+    "wires": [
+      [
+        "3f959627ec74cbd2"
+      ],
+      [
+        "33f4df519813ced6"
+      ]
+    ]
+  },
+  {
+    "id": "3f959627ec74cbd2",
+    "type": "function",
+    "z": "f2b7188aa10e3c01",
+    "name": "解析机柜Coils",
+    "func": "const p = msg.payload || {};\nconst data = Array.isArray(p.data) ? p.data :\n             Array.isArray(p) ? p :\n             (Array.isArray(msg.data) ? msg.data : []);\n\nmsg.payload = {\n    online: Boolean(data[0]),\n    doorOpen: Boolean(data[1]),\n    smokeAlarm: Boolean(data[2]),\n    waterLeak: Boolean(data[3]),\n    powerAlarm: Boolean(data[4]),\n    fanAlarm: Boolean(data[5]),\n    criticalAlarm: Boolean(data[6]),\n    maintenanceMode: Boolean(data[7])\n};\nreturn msg;",
+    "outputs": 1,
+    "timeout": 0,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 610,
+    "y": 510,
+    "wires": [
+      [
+        "92fe5bc5e57a6be5"
+      ]
+    ]
+  },
+  {
+    "id": "92fe5bc5e57a6be5",
+    "type": "debug",
+    "z": "f2b7188aa10e3c01",
+    "name": "Coils自检结果",
+    "active": true,
+    "tosidebar": true,
+    "console": false,
+    "tostatus": false,
+    "complete": "payload",
+    "targetType": "msg",
+    "statusVal": "",
+    "statusType": "auto",
+    "x": 840,
+    "y": 510,
+    "wires": []
+  },
+  {
+    "id": "5de8a15b5452ef55",
+    "type": "catch",
+    "z": "f2b7188aa10e3c01",
+    "name": "捕获真正的节点错误",
+    "scope": null,
+    "uncaught": false,
+    "x": 160,
+    "y": 580,
+    "wires": [
+      [
+        "d4fc604f72621349"
+      ]
+    ]
+  },
+  {
+    "id": "d4fc604f72621349",
+    "type": "debug",
+    "z": "f2b7188aa10e3c01",
+    "name": "真正的流程错误",
+    "active": true,
+    "tosidebar": true,
+    "console": false,
+    "tostatus": false,
+    "complete": "true",
+    "targetType": "full",
+    "statusVal": "",
+    "statusType": "auto",
+    "x": 370,
+    "y": 580,
+    "wires": []
+  },
+  {
+    "id": "dfb53216682ba1c2",
+    "type": "modbus-client",
+    "name": "Local Rack Simulator",
+    "clienttype": "tcp",
+    "bufferCommands": true,
+    "stateLogEnabled": false,
+    "queueLogEnabled": false,
+    "failureLogEnabled": true,
+    "tcpHost": "127.0.0.1",
+    "tcpPort": "1502",
+    "tcpType": "DEFAULT",
+    "serialPort": "/dev/ttyUSB0",
+    "serialType": "RTU-BUFFERD",
+    "serialBaudrate": "9600",
+    "serialDatabits": "8",
+    "serialStopbits": "1",
+    "serialParity": "none",
+    "serialConnectionDelay": "100",
+    "serialAsciiResponseStartDelimiter": "0x3A",
+    "unit_id": "1",
+    "commandDelay": "1",
+    "clientTimeout": "1000",
+    "reconnectOnTimeout": true,
+    "reconnectTimeout": "2000",
+    "parallelUnitIdsAllowed": true,
+    "showErrors": false,
+    "showWarnings": true,
+    "showLogs": true
+  }
+]

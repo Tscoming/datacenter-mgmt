@@ -123,6 +123,17 @@
     }
   }
 
+  span[data-status='degraded'] {
+    color: #ffb000;
+    border-color: rgba(255, 176, 0, 0.42);
+    background: rgba(255, 176, 0, 0.09);
+
+    &::before {
+      background: #ffb000;
+      box-shadow: 0 0 10px #ffb000;
+    }
+  }
+
   em {
     font-style: normal;
   }

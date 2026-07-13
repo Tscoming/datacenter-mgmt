@@ -34,11 +34,17 @@ import {
   getDigitalTwinScreenData,
   type DigitalTwinScreenData,
 } from '@/services/idc/screen';
+import {
+  subscribeCabinetHighFrequencyTelemetry,
+  subscribeCabinetTelemetry,
+  type CabinetTelemetrySourceState,
+} from '@/services/idc/telemetry';
 import { ScreenDatacenterScene } from './ScreenDatacenterScene';
 import styles from './index.less';
 
 type ScreenDatacenterOption = { id: string; name: string; code: string };
 type ScreenConnectionType = { value: string; label: string; color: string };
+type CabinetTelemetryStateMap = Record<string, CabinetTelemetrySourceState>;
 
 const chartTheme = {
   styleSheet: {
@@ -263,6 +269,80 @@ const loadDigitalTwinScreenData = async (datacenterId?: string) => {
   };
 };
 
+const getLiveCabinetStatus = (
+  cabinet: IDC.Cabinet,
+  state?: CabinetTelemetrySourceState,
+): IDC.Cabinet['status'] => {
+  if (!state || state.status === 'starting' || state.status === 'disabled') return cabinet.status;
+  if (state.status === 'offline' || state.status === 'configuration_error') return 'offline';
+  if (state.telemetry?.severity === 'critical') return 'error';
+  if (state.telemetry?.severity === 'warning') return 'warning';
+  if (state.telemetry?.severity === 'offline') return 'offline';
+  return 'normal';
+};
+
+const mergeCabinetTelemetry = (
+  baseData: DigitalTwinScreenData | null,
+  states: CabinetTelemetryStateMap,
+) => {
+  if (!baseData) return null;
+
+  const cabinets = baseData.cabinets.map((cabinet) => {
+    const state = states[cabinet.id];
+    return {
+      ...cabinet,
+      currentPower: state?.telemetry?.activePowerW ?? cabinet.currentPower,
+      status: getLiveCabinetStatus(cabinet, state),
+    };
+  });
+  const cabinetById = new Map(cabinets.map((cabinet) => [cabinet.id, cabinet] as const));
+  const cabinetEnvironments = baseData.cabinetEnvironments.map((environment) => {
+    const telemetry = states[environment.cabinetId]?.telemetry;
+    if (!telemetry) return environment;
+
+    return {
+      ...environment,
+      avgTemperature: telemetry.temperatureC,
+      maxTemperature: Math.max(telemetry.temperatureC, telemetry.outletTemperatureC),
+      minTemperature: Math.min(telemetry.temperatureC, telemetry.inletTemperatureC),
+      avgHumidity: telemetry.humidityRH,
+      status:
+        telemetry.severity === 'critical'
+          ? ('critical' as const)
+          : telemetry.severity === 'warning'
+            ? ('warning' as const)
+            : ('normal' as const),
+    };
+  });
+  const averageTemperature = cabinetEnvironments.length
+    ? cabinetEnvironments.reduce((sum, item) => sum + item.avgTemperature, 0) /
+      cabinetEnvironments.length
+    : baseData.overview.avgTemperature;
+  const averageHumidity = cabinetEnvironments.length
+    ? cabinetEnvironments.reduce((sum, item) => sum + item.avgHumidity, 0) /
+      cabinetEnvironments.length
+    : baseData.overview.avgHumidity;
+
+  return {
+    ...baseData,
+    cabinets,
+    cabinetEnvironments,
+    overview: {
+      ...baseData.overview,
+      itPowerKw: cabinets.reduce((sum, cabinet) => sum + cabinet.currentPower, 0) / 1000,
+      avgTemperature: averageTemperature,
+      avgHumidity: averageHumidity,
+    },
+    charts: {
+      ...baseData.charts,
+      cabinetStatus: baseData.charts.cabinetStatus.map((item) => ({
+        ...item,
+        status: cabinetById.get(item.cabinetId)?.status || item.status,
+      })),
+    },
+  } satisfies DigitalTwinScreenData;
+};
+
 const DigitalTwinScreen: React.FC = () => {
   const [data, setData] = useState<DigitalTwinScreenData | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -275,6 +355,9 @@ const DigitalTwinScreen: React.FC = () => {
   const [showCabinetNames, setShowCabinetNames] = useState(false);
   const [sceneMenuOpen, setSceneMenuOpen] = useState(false);
   const [currentTime, setCurrentTime] = useState(new Date());
+  const [cabinetTelemetry, setCabinetTelemetry] = useState<CabinetTelemetryStateMap>({});
+  const [telemetryStreamConnected, setTelemetryStreamConnected] = useState(false);
+  const [selectedTelemetryCabinetId, setSelectedTelemetryCabinetId] = useState<string>();
 
   useEffect(() => {
     let cancelled = false;
@@ -310,6 +393,7 @@ const DigitalTwinScreen: React.FC = () => {
   }, []);
 
   const handleDatacenterChange = async (datacenterId: string) => {
+    setSelectedTelemetryCabinetId(undefined);
     setSelectedDatacenterId(datacenterId);
     setData(null);
     setErrorMessage(null);
@@ -348,13 +432,62 @@ const DigitalTwinScreen: React.FC = () => {
   };
 
   useEffect(() => {
+    if (!selectedDatacenterId) return undefined;
+
+    setCabinetTelemetry({});
+    setTelemetryStreamConnected(false);
+    return subscribeCabinetTelemetry(selectedDatacenterId, {
+      onSnapshot: (items) => {
+        setCabinetTelemetry(
+          Object.fromEntries(items.map((item) => [item.source.cabinetId, item])),
+        );
+        setTelemetryStreamConnected(true);
+      },
+      onState: (state) => {
+        setCabinetTelemetry((current) => ({
+          ...current,
+          [state.source.cabinetId]: state,
+        }));
+        setTelemetryStreamConnected(true);
+      },
+      onOpen: () => setTelemetryStreamConnected(true),
+      onError: () => setTelemetryStreamConnected(false),
+    });
+  }, [selectedDatacenterId]);
+
+  const selectedCabinetHasTelemetrySource = Boolean(
+    selectedTelemetryCabinetId && cabinetTelemetry[selectedTelemetryCabinetId],
+  );
+
+  useEffect(() => {
+    if (!selectedTelemetryCabinetId || !selectedCabinetHasTelemetrySource) return undefined;
+    return subscribeCabinetHighFrequencyTelemetry(selectedTelemetryCabinetId, (state) => {
+      setCabinetTelemetry((current) => ({
+        ...current,
+        [state.source.cabinetId]: state,
+      }));
+    });
+  }, [selectedCabinetHasTelemetrySource, selectedTelemetryCabinetId]);
+
+  useEffect(() => {
     const timer = window.setInterval(() => setCurrentTime(new Date()), 1000);
     return () => window.clearInterval(timer);
   }, []);
 
+  const screenData = useMemo(
+    () => mergeCabinetTelemetry(data, cabinetTelemetry),
+    [cabinetTelemetry, data],
+  );
+  const telemetrySummary = useMemo(() => {
+    const states = Object.values(cabinetTelemetry);
+    return {
+      configured: states.length,
+      online: states.filter((state) => state.status === 'online').length,
+    };
+  }, [cabinetTelemetry]);
   const cpuConfig = useMemo(
     () => ({
-      data: data?.charts.cpuUsage || [],
+      data: screenData?.charts.cpuUsage || [],
       xField: 'time',
       yField: 'value',
       height: 150,
@@ -372,12 +505,12 @@ const DigitalTwinScreen: React.FC = () => {
         y: { labelFill: '#8aa8bd', gridStroke: '#173146' },
       },
     }),
-    [data?.charts.cpuUsage],
+    [screenData?.charts.cpuUsage],
   );
 
   const networkConfig = useMemo(
     () => ({
-      data: data?.charts.networkTraffic || [],
+      data: screenData?.charts.networkTraffic || [],
       xField: 'time',
       yField: 'value',
       seriesField: 'type',
@@ -397,12 +530,12 @@ const DigitalTwinScreen: React.FC = () => {
         y: { labelFill: '#8aa8bd', gridStroke: '#173146' },
       },
     }),
-    [data?.charts.networkTraffic],
+    [screenData?.charts.networkTraffic],
   );
 
   const powerConfig = useMemo(
     () => ({
-      data: data?.charts.powerTrend || [],
+      data: screenData?.charts.powerTrend || [],
       xField: 'time',
       yField: 'value',
       height: 150,
@@ -420,29 +553,29 @@ const DigitalTwinScreen: React.FC = () => {
         y: { labelFill: '#8aa8bd', gridStroke: '#173146' },
       },
     }),
-    [data?.charts.powerTrend],
+    [screenData?.charts.powerTrend],
   );
 
   if (errorMessage) {
     return <div className={styles.loading}>3D机柜数据加载失败：{errorMessage}</div>;
   }
 
-  if (!data) {
+  if (!screenData) {
     return <div className={styles.loading}>加载数字孪生大屏...</div>;
   }
 
-  const memoryValue = data.charts.memoryUsage.find((item) => item.name === 'used')?.value || 0;
+  const memoryValue = screenData.charts.memoryUsage.find((item) => item.name === 'used')?.value || 0;
   const metrics = [
-    { label: 'PUE', value: data.overview.pue.toFixed(2), icon: <Zap size={27} /> },
-    { label: '总功耗', value: `${data.overview.totalPowerKw.toFixed(1)} kW`, icon: <Power size={24} /> },
-    { label: '制冷功耗', value: `${data.overview.coolingPowerKw.toFixed(1)} kW`, icon: <Snowflake size={24} /> },
-    { label: 'IT功耗', value: `${data.overview.itPowerKw.toFixed(1)} kW`, icon: <Monitor size={24} /> },
-    { label: '平均温度', value: `${data.overview.avgTemperature.toFixed(1)}℃`, icon: <Thermometer size={24} /> },
-    { label: '平均湿度', value: `${data.overview.avgHumidity}%`, icon: <Droplets size={24} /> },
-    { label: '设备总数', value: data.overview.deviceTotal.toLocaleString(), icon: <Server size={24} /> },
-    { label: '在线', value: data.overview.online.toLocaleString(), icon: <CheckSquare size={24} />, tone: 'green' as const },
-    { label: '告警', value: data.overview.warning, icon: <AlertTriangle size={24} />, tone: 'yellow' as const },
-    { label: '离线', value: data.overview.offline, icon: <XSquare size={24} />, tone: 'red' as const },
+    { label: 'PUE', value: screenData.overview.pue.toFixed(2), icon: <Zap size={27} /> },
+    { label: '总功耗', value: `${screenData.overview.totalPowerKw.toFixed(1)} kW`, icon: <Power size={24} /> },
+    { label: '制冷功耗', value: `${screenData.overview.coolingPowerKw.toFixed(1)} kW`, icon: <Snowflake size={24} /> },
+    { label: 'IT功耗', value: `${screenData.overview.itPowerKw.toFixed(1)} kW`, icon: <Monitor size={24} /> },
+    { label: '平均温度', value: `${screenData.overview.avgTemperature.toFixed(1)}℃`, icon: <Thermometer size={24} /> },
+    { label: '平均湿度', value: `${screenData.overview.avgHumidity.toFixed(1)}%`, icon: <Droplets size={24} /> },
+    { label: '设备总数', value: screenData.overview.deviceTotal.toLocaleString(), icon: <Server size={24} /> },
+    { label: '在线', value: screenData.overview.online.toLocaleString(), icon: <CheckSquare size={24} />, tone: 'green' as const },
+    { label: '告警', value: screenData.overview.warning, icon: <AlertTriangle size={24} />, tone: 'yellow' as const },
+    { label: '离线', value: screenData.overview.offline, icon: <XSquare size={24} />, tone: 'red' as const },
   ];
 
   return (
@@ -479,10 +612,21 @@ const DigitalTwinScreen: React.FC = () => {
           />
           25℃ 晴朗
         </div>
-        <h1>{data.datacenter.name}</h1>
+        <h1>{screenData.datacenter.name}</h1>
         <div className={styles.systemStatus}>
-          <span>系统运行正常</span>
-          <em>已运行：0天0小时1分</em>
+          <span
+            data-status={
+              telemetrySummary.configured > 0 &&
+              telemetrySummary.online === telemetrySummary.configured
+                ? 'healthy'
+                : 'degraded'
+            }
+          >
+            {telemetrySummary.configured > 0
+              ? `遥测采集 ${telemetrySummary.online}/${telemetrySummary.configured}`
+              : '遥测未配置'}
+          </span>
+          <em>{telemetryStreamConnected ? '实时推送已连接' : '实时推送重连中'}</em>
         </div>
       </header>
 
@@ -501,7 +645,7 @@ const DigitalTwinScreen: React.FC = () => {
             <MemoryRing value={memoryValue} />
           </Panel>
           <Panel title="温度监控" icon={<Thermometer size={16} />}>
-            <MiniBars data={data.charts.temperatureByZone} />
+            <MiniBars data={screenData.charts.temperatureByZone} />
           </Panel>
         </aside>
 
@@ -568,10 +712,14 @@ const DigitalTwinScreen: React.FC = () => {
           >
             <Suspense fallback={null}>
               <ScreenDatacenterScene
-                layout={data.layout}
-                cabinets={data.cabinets}
-                devices={data.devices}
-                cabinetEnvironments={data.cabinetEnvironments}
+                layout={screenData.layout}
+                cabinets={screenData.cabinets}
+                devices={screenData.devices}
+                cabinetEnvironments={screenData.cabinetEnvironments}
+                cabinetTelemetry={cabinetTelemetry}
+                onSelectedCabinetChange={(cabinetId) =>
+                  setSelectedTelemetryCabinetId(cabinetId || undefined)
+                }
                 connections={connections}
                 connectionTypes={connectionTypes}
                 showConnections={showConnections}
@@ -596,12 +744,12 @@ const DigitalTwinScreen: React.FC = () => {
             <Area {...powerConfig} />
           </Panel>
           <Panel title="机柜状态" icon={<Server size={16} />}>
-            <CabinetStatus data={data.charts.cabinetStatus} />
+            <CabinetStatus data={screenData.charts.cabinetStatus} />
           </Panel>
         </aside>
       </main>
 
-      <AlertTicker alerts={data.alerts} />
+      <AlertTicker alerts={screenData.alerts} />
     </div>
   );
 };

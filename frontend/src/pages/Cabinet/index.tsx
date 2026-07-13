@@ -1,7 +1,7 @@
 import { PageContainer } from '@ant-design/pro-components';
-import { ProTable, ModalForm, ProFormText, ProFormTextArea, ProFormSelect, ProFormDigit } from '@ant-design/pro-components';
+import { ProTable, ModalForm, ProForm, ProFormText, ProFormTextArea, ProFormSelect, ProFormDigit } from '@ant-design/pro-components';
 import type { ProColumns, ActionType } from '@ant-design/pro-components';
-import { Button, message, Popconfirm, Tag, Space, Progress, Tooltip } from 'antd';
+import { Alert, Button, Descriptions, Empty, Form, message, Modal, Popconfirm, Progress, Space, Spin, Tabs, Tag, Tooltip } from 'antd';
 import { useRef, useState, useEffect } from 'react';
 import {
     Server,
@@ -17,12 +17,31 @@ import {
     getCabinets,
     createCabinet,
     updateCabinet,
-    deleteCabinet
+    deleteCabinet,
+    getCabinetTelemetrySource,
+    saveCabinetTelemetrySource,
+    testCabinetTelemetrySource,
 } from '@/services/idc/cabinet';
 import { getDevices } from '@/services/idc/device';
 import { getAllDatacenters } from '@/services/idc/datacenter';
 import { getAllDeviceTemplates } from '@/services/idc/deviceTemplate';
 import CabinetFrontView from '@/components/CabinetFrontView';
+
+type TelemetrySourceFormValues = {
+    id: string;
+    host: string;
+    port: number;
+    unitId: number;
+    timeoutMs: number;
+    enabled: boolean;
+};
+
+const formatTelemetryValue = (value: unknown) => {
+    if (value === null || value === undefined || value === '') return '-';
+    if (typeof value === 'boolean') return value ? 'true' : 'false';
+    if (typeof value === 'object') return JSON.stringify(value);
+    return String(value);
+};
 
 const CabinetPage: React.FC = () => {
     const actionRef = useRef<ActionType>(null);
@@ -30,6 +49,15 @@ const CabinetPage: React.FC = () => {
     const [editModalOpen, setEditModalOpen] = useState(false);
     const [currentRow, setCurrentRow] = useState<IDC.Cabinet>();
     const [datacenters, setDatacenters] = useState<{ id: string; name: string }[]>([]);
+    const [cabinetEditForm] = Form.useForm();
+    const [telemetryForm] = Form.useForm();
+    const [telemetryLoading, setTelemetryLoading] = useState(false);
+    const [telemetryTestOpen, setTelemetryTestOpen] = useState(false);
+    const [telemetryTestConfig, setTelemetryTestConfig] = useState<TelemetrySourceFormValues>();
+    const [telemetryTestData, setTelemetryTestData] = useState<Record<string, unknown>>();
+    const [telemetryTestError, setTelemetryTestError] = useState<string>();
+    const [telemetryTestRefreshing, setTelemetryTestRefreshing] = useState(false);
+    const [telemetryTestUpdatedAt, setTelemetryTestUpdatedAt] = useState<Date>();
 
     // 机柜使用详情视图状态
     const [frontViewOpen, setFrontViewOpen] = useState(false);
@@ -50,6 +78,91 @@ const CabinetPage: React.FC = () => {
             }
         });
     }, []);
+
+    useEffect(() => {
+        if (!editModalOpen || !currentRow) return;
+        let cancelled = false;
+        cabinetEditForm.setFieldsValue(currentRow);
+        telemetryForm.resetFields();
+        setTelemetryLoading(true);
+        getCabinetTelemetrySource(currentRow.id)
+            .then((res) => {
+                if (cancelled) return;
+                telemetryForm.setFieldsValue(res.data || {
+                    id: `${currentRow.code}-Telemery`,
+                    host: '',
+                    port: 502,
+                    unitId: 1,
+                    timeoutMs: 1800,
+                    enabled: true,
+                });
+            })
+            .catch((error) => {
+                if (!cancelled) {
+                    message.error(error instanceof Error ? error.message : '读取遥测采集配置失败');
+                }
+            })
+            .finally(() => {
+                if (!cancelled) setTelemetryLoading(false);
+            });
+        return () => {
+            cancelled = true;
+        };
+    }, [cabinetEditForm, currentRow, editModalOpen, telemetryForm]);
+
+    useEffect(() => {
+        if (!telemetryTestOpen || !telemetryTestConfig || !currentRow) return;
+        let cancelled = false;
+        let inFlight = false;
+
+        const collect = async () => {
+            if (inFlight) return;
+            inFlight = true;
+            setTelemetryTestRefreshing(true);
+            try {
+                const res = await testCabinetTelemetrySource(currentRow.id, telemetryTestConfig);
+                if (!cancelled) {
+                    setTelemetryTestData({ ...res.data });
+                    setTelemetryTestError(undefined);
+                    setTelemetryTestUpdatedAt(new Date());
+                }
+            } catch (error) {
+                if (!cancelled) {
+                    setTelemetryTestError(
+                        error instanceof Error ? error.message : '遥测数据采集测试失败',
+                    );
+                }
+            } finally {
+                if (!cancelled) {
+                    setTelemetryTestRefreshing(false);
+                }
+                inFlight = false;
+            }
+        };
+
+        void collect();
+        const timer = window.setInterval(() => void collect(), 2000);
+        return () => {
+            cancelled = true;
+            window.clearInterval(timer);
+        };
+    }, [currentRow, telemetryTestConfig, telemetryTestOpen]);
+
+    const handleOpenTelemetryTest = async () => {
+        const values = await telemetryForm.validateFields([
+            'id',
+            'host',
+            'port',
+            'unitId',
+            'timeoutMs',
+            'enabled',
+        ]) as TelemetrySourceFormValues;
+        setTelemetryTestConfig(values);
+        setTelemetryTestData(undefined);
+        setTelemetryTestError(undefined);
+        setTelemetryTestUpdatedAt(undefined);
+        setTelemetryTestOpen(true);
+    };
 
     // 查看机柜使用详情
     const handleViewUsage = async (cabinet: IDC.Cabinet) => {
@@ -341,49 +454,215 @@ const CabinetPage: React.FC = () => {
                 />
             </ModalForm>
 
-            {/* 编辑模态框 */}
-            <ModalForm
-                title="编辑机柜"
+            {/* 编辑机柜：基础信息与遥测采集配置分别保存 */}
+            <Modal
+                title={`编辑机柜${currentRow ? ` - ${currentRow.name}` : ''}`}
                 open={editModalOpen}
-                onOpenChange={setEditModalOpen}
-                width={600}
-                initialValues={currentRow}
-                onFinish={async (values) => {
-                    if (!currentRow) return false;
-                    const res = await updateCabinet(currentRow.id, values);
-                    if (res.success) {
-                        message.success('更新成功');
-                        actionRef.current?.reload();
-                        return true;
-                    }
-                    return false;
-                }}
+                onCancel={() => setEditModalOpen(false)}
+                footer={null}
+                width={720}
+                destroyOnHidden
             >
-                <ProFormSelect
-                    name="datacenterId"
-                    label="所属数据中心"
-                    options={datacenters.map(dc => ({ value: dc.id, label: dc.name }))}
-                    rules={[{ required: true }]}
-                />
-                <ProFormText name="name" label="机柜名称" rules={[{ required: true }]} />
-                <ProFormText name="code" label="机柜编码" rules={[{ required: true }]} />
-                <Space size={16}>
-                    <ProFormDigit name="row" label="行号" width="sm" min={1} rules={[{ required: true }]} />
-                    <ProFormDigit name="column" label="列号" width="sm" min={1} rules={[{ required: true }]} />
-                </Space>
-                <ProFormSelect
-                    name="status"
-                    label="状态"
-                    options={[
-                        { value: 'normal', label: '正常' },
-                        { value: 'warning', label: '告警' },
-                        { value: 'error', label: '故障' },
-                        { value: 'offline', label: '离线' },
+                <Tabs
+                    items={[
+                        {
+                            key: 'base',
+                            label: '基础信息',
+                            children: (
+                                <ProForm
+                                    form={cabinetEditForm}
+                                    layout="vertical"
+                                    submitter={{
+                                        searchConfig: { submitText: '保存机柜信息' },
+                                        resetButtonProps: false,
+                                    }}
+                                    onFinish={async (values) => {
+                                        if (!currentRow) return false;
+                                        const res = await updateCabinet(currentRow.id, values);
+                                        if (!res.success) return false;
+                                        message.success('机柜基础信息已保存');
+                                        actionRef.current?.reload();
+                                        return true;
+                                    }}
+                                >
+                                    <ProFormSelect
+                                        name="datacenterId"
+                                        label="所属数据中心"
+                                        options={datacenters.map(dc => ({ value: dc.id, label: dc.name }))}
+                                        rules={[{ required: true }]}
+                                    />
+                                    <ProFormText name="name" label="机柜名称" rules={[{ required: true }]} />
+                                    <ProFormText name="code" label="机柜编码" rules={[{ required: true }]} />
+                                    <Space size={16}>
+                                        <ProFormDigit name="row" label="行号" width="sm" min={1} rules={[{ required: true }]} />
+                                        <ProFormDigit name="column" label="列号" width="sm" min={1} rules={[{ required: true }]} />
+                                    </Space>
+                                    <ProFormSelect
+                                        name="status"
+                                        label="状态"
+                                        options={[
+                                            { value: 'normal', label: '正常' },
+                                            { value: 'warning', label: '告警' },
+                                            { value: 'error', label: '故障' },
+                                            { value: 'offline', label: '离线' },
+                                        ]}
+                                    />
+                                    <ProFormDigit name="maxPower" label="最大功率(W)" min={1000} />
+                                    <ProFormTextArea name="description" label="描述" />
+                                </ProForm>
+                            ),
+                        },
+                        {
+                            key: 'telemetry',
+                            label: '遥测采集配置',
+                            children: (
+                                <Spin spinning={telemetryLoading}>
+                                    <Alert
+                                        type="info"
+                                        showIcon
+                                        message="该配置独立保存"
+                                        description="保存后后端会立即重载采集任务。高低频周期仍由服务端 .env 统一配置。"
+                                        style={{ marginBottom: 16 }}
+                                    />
+                                    <ProForm
+                                        form={telemetryForm}
+                                        layout="vertical"
+                                        submitter={{
+                                            searchConfig: { submitText: '保存遥测采集配置' },
+                                            resetButtonProps: false,
+                                            render: (_, buttons) => [
+                                                <Button
+                                                    key="test-telemetry"
+                                                    onClick={() => void handleOpenTelemetryTest()}
+                                                >
+                                                    测试遥测数据采集
+                                                </Button>,
+                                                ...buttons,
+                                            ],
+                                        }}
+                                        onFinish={async (values) => {
+                                            if (!currentRow) return false;
+                                            const telemetryValues = values as TelemetrySourceFormValues;
+                                            const res = await saveCabinetTelemetrySource(
+                                                currentRow.id,
+                                                {
+                                                    id: telemetryValues.id,
+                                                    host: telemetryValues.host,
+                                                    port: telemetryValues.port,
+                                                    unitId: telemetryValues.unitId,
+                                                    timeoutMs: telemetryValues.timeoutMs,
+                                                    enabled: telemetryValues.enabled,
+                                                },
+                                            );
+                                            if (!res.success) return false;
+                                            telemetryForm.setFieldsValue(res.data);
+                                            message.success('遥测采集配置已保存并生效');
+                                            return true;
+                                        }}
+                                    >
+                                        <ProFormSelect
+                                            name="enabled"
+                                            label="采集状态"
+                                            options={[
+                                                { value: true, label: '启用' },
+                                                { value: false, label: '停用' },
+                                            ]}
+                                            rules={[{ required: true }]}
+                                        />
+                                        <ProFormText
+                                            name="id"
+                                            label="采集源标识"
+                                            tooltip="所有机柜的采集源标识必须唯一"
+                                            rules={[
+                                                { required: true, message: '请输入采集源标识' },
+                                                { pattern: /^[A-Za-z0-9._:-]+$/, message: '仅允许字母、数字、点、下划线、冒号和连字符' },
+                                            ]}
+                                        />
+                                        <ProFormText
+                                            name="protocol"
+                                            label="采集协议"
+                                            initialValue="Modbus TCP"
+                                            fieldProps={{ disabled: true }}
+                                        />
+                                        <ProFormText
+                                            name="host"
+                                            label="主机地址"
+                                            placeholder="例如：192.168.244.144"
+                                            rules={[{ required: true, message: '请输入主机地址' }]}
+                                        />
+                                        <Space size={16}>
+                                            <ProFormDigit
+                                                name="port"
+                                                label="端口"
+                                                width="sm"
+                                                min={1}
+                                                max={65535}
+                                                rules={[{ required: true }]}
+                                            />
+                                            <ProFormDigit
+                                                name="unitId"
+                                                label="Unit ID"
+                                                width="sm"
+                                                min={0}
+                                                max={255}
+                                                rules={[{ required: true }]}
+                                            />
+                                            <ProFormDigit
+                                                name="timeoutMs"
+                                                label="超时(ms)"
+                                                width="sm"
+                                                min={100}
+                                                rules={[{ required: true }]}
+                                            />
+                                        </Space>
+                                    </ProForm>
+                                </Spin>
+                            ),
+                        },
                     ]}
                 />
-                <ProFormDigit name="maxPower" label="最大功率(W)" min={1000} />
-                <ProFormTextArea name="description" label="描述" />
-            </ModalForm>
+            </Modal>
+
+            <Modal
+                title={`遥测数据采集测试${currentRow ? ` - ${currentRow.name}` : ''}`}
+                open={telemetryTestOpen}
+                onCancel={() => setTelemetryTestOpen(false)}
+                footer={[
+                    <Button key="close" onClick={() => setTelemetryTestOpen(false)}>
+                        关闭
+                    </Button>,
+                ]}
+                width={900}
+                destroyOnHidden
+            >
+                <Alert
+                    type={telemetryTestError ? 'error' : 'info'}
+                    showIcon
+                    message={telemetryTestError || '正在每隔 2 秒采集并刷新当前最新值'}
+                    description={
+                        telemetryTestUpdatedAt
+                            ? `最近成功采集：${telemetryTestUpdatedAt.toLocaleTimeString('zh-CN')}`
+                            : '打开弹窗后立即执行第一次采集'
+                    }
+                    style={{ marginBottom: 16 }}
+                />
+                <Spin spinning={telemetryTestRefreshing && !telemetryTestData}>
+                    {telemetryTestData ? (
+                        <Descriptions
+                            bordered
+                            size="small"
+                            column={2}
+                            items={Object.entries(telemetryTestData).map(([fieldName, value]) => ({
+                                key: fieldName,
+                                label: fieldName,
+                                children: formatTelemetryValue(value),
+                            }))}
+                        />
+                    ) : (
+                        <Empty description="等待遥测数据" />
+                    )}
+                </Spin>
+            </Modal>
 
             {/* 机柜使用详情视图 */}
             <CabinetFrontView

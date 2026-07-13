@@ -10,12 +10,15 @@ import { useFrame, useThree } from '@react-three/fiber';
 import { history } from '@umijs/max';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import * as THREE from 'three';
+import type { CabinetTelemetrySourceState } from '@/services/idc/telemetry';
 
 interface ScreenDatacenterSceneProps {
   layout: IDC.DatacenterLayout;
   cabinets: IDC.Cabinet[];
   devices: IDC.Device[];
   cabinetEnvironments: IDC.CabinetEnvironment[];
+  cabinetTelemetry: Record<string, CabinetTelemetrySourceState>;
+  onSelectedCabinetChange: (cabinetId: string | null) => void;
   connections: IDC.Connection[];
   connectionTypes: { value: string; label: string; color: string }[];
   showConnections: boolean;
@@ -111,6 +114,24 @@ const StatusLight: React.FC<{ color: string; alerting: boolean; position: [numbe
       />
     </mesh>
   );
+};
+
+const detailSectionStyle = {
+  marginTop: 8,
+  paddingTop: 7,
+  borderTop: '1px solid rgba(92, 224, 238, 0.2)',
+};
+
+const detailSectionTitleStyle = {
+  marginBottom: 3,
+  color: '#5ce0ee',
+  fontSize: 11,
+  fontWeight: 700,
+  letterSpacing: 1,
+};
+
+const detailMutedStyle = {
+  color: '#7ea7b0',
 };
 
 const CabinetConnectionCurve: React.FC<{
@@ -672,6 +693,7 @@ const ScreenCabinet3D: React.FC<{
   cabinet: IDC.Cabinet;
   devices: IDC.Device[];
   environment?: IDC.CabinetEnvironment;
+  telemetryState?: CabinetTelemetrySourceState;
   position: [number, number, number];
   rotationY: number;
   hovered: boolean;
@@ -684,6 +706,7 @@ const ScreenCabinet3D: React.FC<{
   cabinet,
   devices,
   environment,
+  telemetryState,
   position,
   rotationY,
   hovered,
@@ -696,9 +719,20 @@ const ScreenCabinet3D: React.FC<{
   const height = 2.72;
   const width = CABINET_LAYOUT_WIDTH;
   const depth = CABINET_LAYOUT_DEPTH;
-  const activeStatus = environment?.status === 'critical' ? 'error' : cabinet.status;
+  const telemetry = telemetryState?.telemetry;
+  const activeStatus =
+    telemetryState?.status === 'offline' || telemetryState?.status === 'configuration_error'
+      ? 'offline'
+      : telemetry?.severity === 'critical'
+        ? 'error'
+        : telemetry?.severity === 'warning'
+          ? 'warning'
+          : environment?.status === 'critical'
+            ? 'error'
+            : cabinet.status;
   const color = statusColor[activeStatus] || statusColor.normal;
   const usage = Math.round((cabinet.usedU / cabinet.uHeight) * 100);
+  const onlineDeviceCount = devices.filter((device) => device.status === 'online').length;
   const powerKw = cabinet.currentPower / 1000;
   const slotPanelHeight = height - 0.28;
   const slotHeight = slotPanelHeight / cabinet.uHeight;
@@ -897,7 +931,7 @@ const ScreenCabinet3D: React.FC<{
           <Html transform distanceFactor={4.6} zIndexRange={[80, 0]}>
             <div
               style={{
-                minWidth: 164,
+                minWidth: 210,
                 padding: '14px 16px',
                 color: '#dffaff',
                 background: 'rgba(1, 15, 24, 0.92)',
@@ -928,13 +962,65 @@ const ScreenCabinet3D: React.FC<{
               >
                 {cabinet.name || cabinet.code}
               </div>
-              <div>
-                状态: <span style={{ color }}>{statusText[activeStatus] || activeStatus}</span>
+              <div style={detailSectionStyle}>
+                <div style={detailSectionTitleStyle}>机柜概要</div>
+                <div>
+                  状态: <span style={{ color }}>{statusText[activeStatus] || activeStatus}</span>
+                </div>
+                <div>设备数量: {devices.length} 台</div>
+                <div>U位占用: {cabinet.usedU}/{cabinet.uHeight}U（{usage}%）</div>
               </div>
-              <div>CPU: {Math.min(98, usage + 8)}%</div>
-              <div>温度: {environment?.avgTemperature ?? 0}℃</div>
-              <div>设备: {devices.length}台</div>
-              <div>功耗: {powerKw.toFixed(1)} kW</div>
+
+              <div style={detailSectionStyle}>
+                <div style={detailSectionTitleStyle}>机柜遥测</div>
+                {telemetry ? (
+                  <>
+                    <div>温度: {telemetry.temperatureC}℃</div>
+                    <div>湿度: {telemetry.humidityRH}%RH</div>
+                    <div>功耗: {(telemetry.activePowerW / 1000).toFixed(2)} kW</div>
+                    <div>
+                      电气: {telemetry.voltageV.toFixed(1)} V / {telemetry.currentA.toFixed(2)} A
+                    </div>
+                    <div>负载: {telemetry.loadPercent.toFixed(1)}%</div>
+                    <div>柜门: {telemetry.doorOpen ? '打开' : '关闭'}</div>
+                    <div>告警码: {telemetry.alarmCode}</div>
+                    <div>更新: {new Date(telemetry.timestamp).toLocaleTimeString('zh-CN')}</div>
+                  </>
+                ) : (
+                  <div style={detailMutedStyle}>
+                    暂无实时遥测（当前功耗 {powerKw.toFixed(2)} kW）
+                  </div>
+                )}
+              </div>
+
+              <div style={detailSectionStyle}>
+                <div style={detailSectionTitleStyle}>主机遥测</div>
+                <div>CPU使用率: {Math.min(98, usage + 8)}%</div>
+                <div>在线设备: {onlineDeviceCount}/{devices.length} 台</div>
+              </div>
+
+              <div style={detailSectionStyle}>
+                <div style={detailSectionTitleStyle}>采集端点</div>
+                {telemetryState ? (
+                  <>
+                    <div>采集: {telemetryState.status}</div>
+                    <div>
+                      模式: {telemetryState.collectionMode === 'high' ? '高频' : '低频'}（
+                      {telemetryState.pollIntervalSeconds} 秒）
+                    </div>
+                    <div>协议: Modbus TCP</div>
+                    <div style={{ wordBreak: 'break-all' }}>
+                      端点: {telemetryState.source.host}:{telemetryState.source.port}
+                    </div>
+                    <div>Unit ID: {telemetryState.source.unitId}</div>
+                    {telemetryState.status !== 'online' && telemetryState.lastError && (
+                      <div>原因: {telemetryState.lastError}</div>
+                    )}
+                  </>
+                ) : (
+                  <div style={detailMutedStyle}>未配置采集端点</div>
+                )}
+              </div>
             </div>
           </Html>
         </Billboard>
@@ -948,6 +1034,8 @@ export const ScreenDatacenterScene: React.FC<ScreenDatacenterSceneProps> = ({
   cabinets,
   devices,
   cabinetEnvironments,
+  cabinetTelemetry,
+  onSelectedCabinetChange,
   connections,
   connectionTypes,
   showConnections,
@@ -958,6 +1046,10 @@ export const ScreenDatacenterScene: React.FC<ScreenDatacenterSceneProps> = ({
   const [selectedCabinetId, setSelectedCabinetId] = useState<string | null>(null);
   const [connectionFocusCabinetId, setConnectionFocusCabinetId] = useState<string | null>(null);
   const [activeCameraFacilityId, setActiveCameraFacilityId] = useState<string | null>(null);
+  const selectCabinet = (cabinetId: string | null) => {
+    setSelectedCabinetId(cabinetId);
+    onSelectedCabinetChange(cabinetId);
+  };
   const floorSize = useMemo(
     () => ({
       width: Math.max(1, layout.canvasWidth || 60),
@@ -973,6 +1065,24 @@ export const ScreenDatacenterScene: React.FC<ScreenDatacenterSceneProps> = ({
   const layoutByCabinetId = useMemo(
     () => new Map(layout.cabinets.map((item) => [item.cabinetId, item] as const)),
     [layout.cabinets],
+  );
+  const cabinetPlacementKey = cabinets
+    .map((cabinet) => `${cabinet.id}:${cabinet.row}:${cabinet.column}`)
+    .join('|');
+  const cabinetViewPoints = useMemo(
+    () =>
+      cabinets.map((cabinet) => {
+        const layoutItem = layoutByCabinetId.get(cabinet.id);
+        return {
+          x: layoutItem
+            ? layoutItem.x + CABINET_LAYOUT_WIDTH / 2
+            : (cabinet.column - 1) * 1.2 + CABINET_LAYOUT_WIDTH / 2,
+          z: layoutItem
+            ? layoutItem.y + CABINET_LAYOUT_DEPTH / 2
+            : (cabinet.row - 1) * 1.6 + CABINET_LAYOUT_DEPTH / 2,
+        };
+      }),
+    [cabinetPlacementKey, layoutByCabinetId],
   );
   const devicesByCabinetId = useMemo(() => {
     const map = new Map<string, IDC.Device[]>();
@@ -1088,7 +1198,7 @@ export const ScreenDatacenterScene: React.FC<ScreenDatacenterSceneProps> = ({
     const span = Math.max(floorSize.width, floorSize.height, 6);
     const distance = Math.min(Math.max(span * 0.62, 12), 48);
 
-    if (!cabinets.length) {
+    if (!cabinetViewPoints.length) {
       return {
         cameraPosition: [
           floorCenter[0] + distance * 0.68,
@@ -1100,21 +1210,10 @@ export const ScreenDatacenterScene: React.FC<ScreenDatacenterSceneProps> = ({
       };
     }
 
-    const points = cabinets.map((cabinet) => {
-      const layoutItem = layoutByCabinetId.get(cabinet.id);
-      return {
-        x: layoutItem
-          ? layoutItem.x + CABINET_LAYOUT_WIDTH / 2
-          : (cabinet.column - 1) * 1.2 + CABINET_LAYOUT_WIDTH / 2,
-        z: layoutItem
-          ? layoutItem.y + CABINET_LAYOUT_DEPTH / 2
-          : (cabinet.row - 1) * 1.6 + CABINET_LAYOUT_DEPTH / 2,
-      };
-    });
-    const minX = Math.min(0, ...points.map((item) => item.x));
-    const maxX = Math.max(floorSize.width, ...points.map((item) => item.x));
-    const minZ = Math.min(0, ...points.map((item) => item.z));
-    const maxZ = Math.max(floorSize.height, ...points.map((item) => item.z));
+    const minX = Math.min(0, ...cabinetViewPoints.map((item) => item.x));
+    const maxX = Math.max(floorSize.width, ...cabinetViewPoints.map((item) => item.x));
+    const minZ = Math.min(0, ...cabinetViewPoints.map((item) => item.z));
+    const maxZ = Math.max(floorSize.height, ...cabinetViewPoints.map((item) => item.z));
     const centerX = (minX + maxX) / 2;
     const centerZ = (minZ + maxZ) / 2;
     const viewSpan = Math.max(maxX - minX, maxZ - minZ, 6);
@@ -1129,7 +1228,7 @@ export const ScreenDatacenterScene: React.FC<ScreenDatacenterSceneProps> = ({
       target: [centerX, 1.1, centerZ] as [number, number, number],
       maxDistance: viewDistance * 1.8,
     };
-  }, [cabinets, floorCenter, floorSize, layoutByCabinetId]);
+  }, [cabinetViewPoints, floorCenter, floorSize]);
   const activeCameraFacility = useMemo(
     () =>
       (layout.facilities || []).find(
@@ -1200,7 +1299,7 @@ export const ScreenDatacenterScene: React.FC<ScreenDatacenterSceneProps> = ({
         position={[floorCenter[0], -0.025, floorCenter[2]]}
         receiveShadow
         onClick={() => {
-          setSelectedCabinetId(null);
+          selectCabinet(null);
           setConnectionFocusCabinetId(null);
           setActiveCameraFacilityId(null);
         }}
@@ -1326,6 +1425,7 @@ export const ScreenDatacenterScene: React.FC<ScreenDatacenterSceneProps> = ({
             cabinet={cabinet}
             devices={devicesByCabinetId.get(cabinet.id) || []}
             environment={envByCabinetId.get(cabinet.id)}
+            telemetryState={cabinetTelemetry[cabinet.id]}
             position={[position.x, 1.36, position.z]}
             rotationY={rotationY}
             hovered={hoveredCabinetId === cabinet.id}
@@ -1333,7 +1433,7 @@ export const ScreenDatacenterScene: React.FC<ScreenDatacenterSceneProps> = ({
             showName={showCabinetNames}
             onHover={setHoveredCabinetId}
             onConnectionFocus={setConnectionFocusCabinetId}
-            onSelect={setSelectedCabinetId}
+            onSelect={selectCabinet}
           />
         );
       })}
@@ -1344,7 +1444,7 @@ export const ScreenDatacenterScene: React.FC<ScreenDatacenterSceneProps> = ({
           facility={facility}
           active={activeCameraFacilityId === facility.id}
           onCameraSelect={(item) => {
-            setSelectedCabinetId(null);
+            selectCabinet(null);
             setActiveCameraFacilityId(item.id);
           }}
         />
