@@ -940,8 +940,9 @@ const ScreenCabinet3D: React.FC<{
                 boxShadow: '0 0 22px rgba(0, 240, 255, 0.25)',
                 fontSize: 12,
                 lineHeight: 1.7,
-                pointerEvents: 'none',
+                pointerEvents: 'auto',
               }}
+              data-cabinet-summary-card
             >
               <div
                 onClick={(event) => {
@@ -1050,6 +1051,20 @@ export const ScreenDatacenterScene: React.FC<ScreenDatacenterSceneProps> = ({
     setSelectedCabinetId(cabinetId);
     onSelectedCabinetChange(cabinetId);
   };
+
+  useEffect(() => {
+    if (!selectedCabinetId) return undefined;
+
+    const closeSummaryCard = (event: PointerEvent) => {
+      if (event.button !== 0) return;
+      if ((event.target as Element | null)?.closest('[data-cabinet-summary-card]')) return;
+      setSelectedCabinetId(null);
+      onSelectedCabinetChange(null);
+    };
+
+    document.addEventListener('pointerdown', closeSummaryCard, true);
+    return () => document.removeEventListener('pointerdown', closeSummaryCard, true);
+  }, [selectedCabinetId, onSelectedCabinetChange]);
   const floorSize = useMemo(
     () => ({
       width: Math.max(1, layout.canvasWidth || 60),
