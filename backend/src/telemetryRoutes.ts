@@ -116,6 +116,24 @@ export default {
     res.status(204).end();
   },
 
+  'POST /api/idc/telemetry/cabinets/:cabinetId/high-frequency-subscriptions/:subscriptionId/release': (
+    req: Request,
+    res: Response,
+  ) => {
+    const released = cabinetTelemetryService.releaseHighFrequency(
+      String(req.params.cabinetId),
+      String(req.params.subscriptionId),
+    );
+    if (!released) {
+      res.status(404).json({
+        success: false,
+        errorMessage: `No telemetry source is configured for cabinet ${req.params.cabinetId}`,
+      });
+      return;
+    }
+    res.status(204).end();
+  },
+
   'GET /api/idc/telemetry/stream': (req: Request, res: Response) => {
     cabinetTelemetryService.subscribe(req, res);
   },

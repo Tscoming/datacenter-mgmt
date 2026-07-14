@@ -115,17 +115,25 @@ export function subscribeCabinetHighFrequencyTelemetry(
   const subscriptionId = crypto.randomUUID();
   const encodedCabinetId = encodeURIComponent(cabinetId);
   const encodedSubscriptionId = encodeURIComponent(subscriptionId);
+  const subscriptionUrl =
+    `/api/idc/telemetry/cabinets/${encodedCabinetId}/high-frequency-subscriptions/${encodedSubscriptionId}`;
+  const releaseUrl = `${subscriptionUrl}/release`;
   const eventSource = new EventSource(
     `/api/idc/telemetry/cabinets/${encodedCabinetId}/high-frequency-stream?subscriptionId=${encodedSubscriptionId}`,
   );
   eventSource.addEventListener('snapshot', (event) => {
     onState(JSON.parse((event as MessageEvent<string>).data) as CabinetTelemetrySourceState);
   });
-  return () => {
+  let released = false;
+  const release = () => {
+    if (released) return;
+    released = true;
     eventSource.close();
-    void fetch(
-      `/api/idc/telemetry/cabinets/${encodedCabinetId}/high-frequency-subscriptions/${encodedSubscriptionId}`,
-      { method: 'DELETE', keepalive: true },
-    ).catch(() => undefined);
+    window.removeEventListener('pagehide', release);
+    if (!navigator.sendBeacon(releaseUrl)) {
+      void fetch(subscriptionUrl, { method: 'DELETE', keepalive: true }).catch(() => undefined);
+    }
   };
+  window.addEventListener('pagehide', release);
+  return release;
 }

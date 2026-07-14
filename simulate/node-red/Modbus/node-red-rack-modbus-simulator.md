@@ -95,24 +95,51 @@ node-red-log
 
 确认日志中没有 `unknown node type`、模块加载失败或依赖编译错误。版本和安装方式可参考 [`node-red-contrib-modbus` npm 页面](https://www.npmjs.com/package/node-red-contrib-modbus)。
 
-## 4. 导入流程
+## 4. 生成并导入实例
+
+原始 JSON 是监听 `1502` 的默认模板。如果同一个 Node-RED 中只需要一个实例，可以直接导入该文件；如果需要多个实例，先为每个实例生成独立 JSON：
+
+```bash
+cd simulate/node-red/Modbus
+node generate-rack-modbus-instance.js \
+  --name Rack-A \
+  --port 1502 \
+  --output node-red-rack-modbus-Rack-A-1502.json
+
+node generate-rack-modbus-instance.js \
+  --name Rack-B \
+  --port 1503 \
+  --output node-red-rack-modbus-Rack-B-1503.json
+```
+
+生成器会同步完成以下修改：
+
+- 为 Flow 和所有节点生成全新的 ID，避免重复导入时引用到已有节点。
+- 将页签名称改为 `<实例名> Modbus TCP 仿真器 :<端口>`。
+- 为所有有名称的节点增加 `[<实例名>]` 前缀。
+- 将 `Modbus Server` 的监听端口和内部 `Modbus Client` 的连接端口同时改为指定端口。
+- 同步更新 Flow 说明和注释中的默认端口。
+
+每个实例必须使用不同的监听端口；`--name` 也应保持唯一，便于在页签、Configuration nodes 和 Debug 面板中区分实例。
+
+### 4.1 导入步骤
 
 1. 打开 Node-RED 编辑器。
 2. 点击右上角菜单，选择 **Import**。
 3. 选择 **select a file to import**。
-4. 选择 `node-red-rack-modbus-simulator.json`。
+4. 单实例选择 `node-red-rack-modbus-simulator.json`；多实例选择上一步生成的实例 JSON。
 5. 选择导入到 **new flow**。
 6. 点击 **Import**。
 7. 检查所有 Modbus 节点均已正常识别，没有显示红色虚线边框或 `unknown`。
 8. 点击右上角 **Deploy**。
 
-部署后，流程页签名称为：
+直接导入默认模板时，流程页签名称为：
 
 ```text
 机柜 Modbus TCP 仿真器
 ```
 
-若导入时提示配置节点重名，应检查右上角菜单中的 **Configuration nodes**，避免误删其他 Flow 正在使用的 Modbus Client 配置。
+使用生成器时，每个实例的 Modbus Client 配置节点都会获得新 ID 和实例名前缀。若直接重复导入默认模板并提示配置节点重名，应取消导入，改用生成器，避免多个实例错误地共享 `Local Rack Simulator` 配置。
 
 ## 5. Modbus 服务参数
 
