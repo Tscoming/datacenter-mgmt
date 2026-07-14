@@ -126,25 +126,42 @@ const CabinetStatus: React.FC<{ data: DigitalTwinScreenData['charts']['cabinetSt
   </div>
 );
 
-const AlertTicker: React.FC<{ alerts: IDC.AlertDetail[] }> = ({ alerts }) => (
-  <div className={styles.alertTicker}>
-    <span className={styles.alertBadge}>实时告警 {alerts.length}</span>
-    <div className={styles.tickerTrack}>
-      <div className={styles.tickerContent}>
-        {[...alerts, ...alerts].map((alert, index) => (
-          <span key={`${alert.id}-${index}`} className={styles.tickerItem}>
-            {new Date(alert.createdAt).toLocaleTimeString('zh-CN', {
-              hour: '2-digit',
-              minute: '2-digit',
-              second: '2-digit',
-            })}
-            <b>{alert.message}</b>
-          </span>
-        ))}
+const AlertTicker: React.FC<{ alerts: IDC.AlertDetail[]; telemetryAlerts: string[] }> = ({
+  alerts,
+  telemetryAlerts,
+}) => {
+  const displayAlerts = useMemo(
+    () => [
+      ...telemetryAlerts.map((message, index) => ({
+        id: `telemetry-unavailable-${index}`,
+        createdAt: new Date().toISOString(),
+        message,
+      })),
+      ...alerts,
+    ],
+    [alerts, telemetryAlerts],
+  );
+
+  return (
+    <div className={styles.alertTicker}>
+      <span className={styles.alertBadge}>实时告警 {displayAlerts.length}</span>
+      <div className={styles.tickerTrack}>
+        <div className={styles.tickerContent}>
+          {[...displayAlerts, ...displayAlerts].map((alert, index) => (
+            <span key={`${alert.id}-${index}`} className={styles.tickerItem}>
+              {new Date(alert.createdAt).toLocaleTimeString('zh-CN', {
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit',
+              })}
+              <b>{alert.message}</b>
+            </span>
+          ))}
+        </div>
       </div>
     </div>
-  </div>
-);
+  );
+};
 
 const getScreenDatacenterId = () => {
   const params = new URLSearchParams(window.location.search);
@@ -195,6 +212,7 @@ const loadScreenSceneData = async (
   data: DigitalTwinScreenData;
   connections: IDC.Connection[];
   connectionTypes: ScreenConnectionType[];
+  telemetryWarning?: string;
 }> => {
   const [datacenterRes, cabinetRes, layoutRes, devices, envRes, connectionRes, connectionTypeRes] =
     await Promise.all([
@@ -202,7 +220,9 @@ const loadScreenSceneData = async (
       getCabinetsByDatacenter(selectedDatacenterId),
       getDatacenterLayout(selectedDatacenterId),
       loadDevicesByDatacenter(selectedDatacenterId),
-      getCabinetEnvironments(),
+      getCabinetEnvironments()
+        .then((response) => ({ response }))
+        .catch((error: unknown) => ({ error })),
       getConnectionsByDatacenter(selectedDatacenterId),
       getConnectionTypes(),
     ]);
@@ -216,9 +236,6 @@ const loadScreenSceneData = async (
   if (!layoutRes.success || !layoutRes.data) {
     throw new Error(`Failed to load layout for datacenter ${selectedDatacenterId}.`);
   }
-  if (!envRes.success || !envRes.data) {
-    throw new Error('Failed to load cabinet environment data.');
-  }
   if (!connectionRes.success || !connectionRes.data) {
     throw new Error('Failed to load datacenter connection data.');
   }
@@ -226,7 +243,17 @@ const loadScreenSceneData = async (
     throw new Error('Failed to load connection type data.');
   }
 
-  const cabinetEnvironments = (envRes.data || []).filter(
+  const environmentResponse = 'response' in envRes ? envRes.response : undefined;
+  const environmentError = 'error' in envRes ? envRes.error : undefined;
+  const telemetryWarning =
+    environmentError || !environmentResponse?.success || !environmentResponse.data
+      ? `机柜遥测数据不可用：${
+          environmentError instanceof Error
+            ? environmentError.message
+            : environmentResponse?.errorMessage || 'Failed to load cabinet environment data.'
+        }`
+      : undefined;
+  const cabinetEnvironments = (environmentResponse?.data || []).filter(
     (item) => item.datacenterId === selectedDatacenterId,
   );
 
@@ -241,6 +268,7 @@ const loadScreenSceneData = async (
     },
     connections: connectionRes.data,
     connectionTypes: connectionTypeRes.data,
+    telemetryWarning,
   };
 };
 
@@ -357,6 +385,8 @@ const DigitalTwinScreen: React.FC = () => {
   const [currentTime, setCurrentTime] = useState(new Date());
   const [cabinetTelemetry, setCabinetTelemetry] = useState<CabinetTelemetryStateMap>({});
   const [telemetryStreamConnected, setTelemetryStreamConnected] = useState(false);
+  const [telemetryDataWarning, setTelemetryDataWarning] = useState<string>();
+  const [telemetryStreamWarning, setTelemetryStreamWarning] = useState<string>();
   const [selectedTelemetryCabinetId, setSelectedTelemetryCabinetId] = useState<string>();
 
   useEffect(() => {
@@ -372,6 +402,7 @@ const DigitalTwinScreen: React.FC = () => {
           setConnections(result.connections);
           setConnectionTypes(result.connectionTypes);
           setEnabledConnectionTypes(result.connectionTypes.map((type) => type.value));
+          setTelemetryDataWarning(result.telemetryWarning);
           setErrorMessage(null);
         }
       } catch (error) {
@@ -397,6 +428,7 @@ const DigitalTwinScreen: React.FC = () => {
     setSelectedDatacenterId(datacenterId);
     setData(null);
     setErrorMessage(null);
+    setTelemetryDataWarning(undefined);
 
     try {
       const result = await loadDigitalTwinScreenData(datacenterId);
@@ -406,6 +438,7 @@ const DigitalTwinScreen: React.FC = () => {
       setConnections(result.connections);
       setConnectionTypes(result.connectionTypes);
       setEnabledConnectionTypes(result.connectionTypes.map((type) => type.value));
+      setTelemetryDataWarning(result.telemetryWarning);
     } catch (error) {
       console.error('Failed to load digital twin screen scene data:', error);
       setData(null);
@@ -436,12 +469,14 @@ const DigitalTwinScreen: React.FC = () => {
 
     setCabinetTelemetry({});
     setTelemetryStreamConnected(false);
+    setTelemetryStreamWarning(undefined);
     return subscribeCabinetTelemetry(selectedDatacenterId, {
       onSnapshot: (items) => {
         setCabinetTelemetry(
           Object.fromEntries(items.map((item) => [item.source.cabinetId, item])),
         );
         setTelemetryStreamConnected(true);
+        setTelemetryStreamWarning(undefined);
       },
       onState: (state) => {
         setCabinetTelemetry((current) => ({
@@ -449,9 +484,16 @@ const DigitalTwinScreen: React.FC = () => {
           [state.source.cabinetId]: state,
         }));
         setTelemetryStreamConnected(true);
+        setTelemetryStreamWarning(undefined);
       },
-      onOpen: () => setTelemetryStreamConnected(true),
-      onError: () => setTelemetryStreamConnected(false),
+      onOpen: () => {
+        setTelemetryStreamConnected(true);
+        setTelemetryStreamWarning(undefined);
+      },
+      onError: () => {
+        setTelemetryStreamConnected(false);
+        setTelemetryStreamWarning('机柜遥测实时推送不可用，正在重连');
+      },
     });
   }, [selectedDatacenterId]);
 
@@ -485,6 +527,18 @@ const DigitalTwinScreen: React.FC = () => {
       online: states.filter((state) => state.status === 'online').length,
     };
   }, [cabinetTelemetry]);
+  const telemetryAlerts = useMemo(() => {
+    const messages = [telemetryDataWarning, telemetryStreamWarning].filter(
+      (message): message is string => Boolean(message),
+    );
+    for (const state of Object.values(cabinetTelemetry)) {
+      if (state.status !== 'offline' && state.status !== 'configuration_error') continue;
+      const cabinetName = state.binding?.cabinetName || state.source.cabinetId;
+      messages.push(`机柜 ${cabinetName} 遥测不可用${state.lastError ? `：${state.lastError}` : ''}`);
+    }
+    return messages;
+  }, [cabinetTelemetry, telemetryDataWarning, telemetryStreamWarning]);
+  const telemetryWarning = telemetryDataWarning || telemetryStreamWarning;
   const cpuConfig = useMemo(
     () => ({
       data: screenData?.charts.cpuUsage || [],
@@ -717,6 +771,7 @@ const DigitalTwinScreen: React.FC = () => {
                 devices={screenData.devices}
                 cabinetEnvironments={screenData.cabinetEnvironments}
                 cabinetTelemetry={cabinetTelemetry}
+                telemetryWarning={telemetryWarning}
                 onSelectedCabinetChange={(cabinetId) =>
                   setSelectedTelemetryCabinetId(cabinetId || undefined)
                 }
@@ -749,7 +804,7 @@ const DigitalTwinScreen: React.FC = () => {
         </aside>
       </main>
 
-      <AlertTicker alerts={screenData.alerts} />
+      <AlertTicker alerts={screenData.alerts} telemetryAlerts={telemetryAlerts} />
     </div>
   );
 };

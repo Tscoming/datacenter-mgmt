@@ -18,6 +18,7 @@ interface ScreenDatacenterSceneProps {
   devices: IDC.Device[];
   cabinetEnvironments: IDC.CabinetEnvironment[];
   cabinetTelemetry: Record<string, CabinetTelemetrySourceState>;
+  telemetryWarning?: string;
   onSelectedCabinetChange: (cabinetId: string | null) => void;
   connections: IDC.Connection[];
   connectionTypes: { value: string; label: string; color: string }[];
@@ -694,6 +695,7 @@ const ScreenCabinet3D: React.FC<{
   devices: IDC.Device[];
   environment?: IDC.CabinetEnvironment;
   telemetryState?: CabinetTelemetrySourceState;
+  telemetryWarning?: string;
   position: [number, number, number];
   rotationY: number;
   hovered: boolean;
@@ -707,6 +709,7 @@ const ScreenCabinet3D: React.FC<{
   devices,
   environment,
   telemetryState,
+  telemetryWarning,
   position,
   rotationY,
   hovered,
@@ -720,6 +723,11 @@ const ScreenCabinet3D: React.FC<{
   const width = CABINET_LAYOUT_WIDTH;
   const depth = CABINET_LAYOUT_DEPTH;
   const telemetry = telemetryState?.telemetry;
+  const cabinetTelemetryWarning =
+    telemetryWarning ||
+    ((telemetryState?.status === 'offline' || telemetryState?.status === 'configuration_error')
+      ? `遥测不可用${telemetryState.lastError ? `：${telemetryState.lastError}` : ''}`
+      : undefined);
   const activeStatus =
     telemetryState?.status === 'offline' || telemetryState?.status === 'configuration_error'
       ? 'offline'
@@ -970,6 +978,9 @@ const ScreenCabinet3D: React.FC<{
                 </div>
                 <div>设备数量: {devices.length} 台</div>
                 <div>U位占用: {cabinet.usedU}/{cabinet.uHeight}U（{usage}%）</div>
+                {cabinetTelemetryWarning && (
+                  <div style={{ color: '#ffb000' }}>{cabinetTelemetryWarning}</div>
+                )}
               </div>
 
               <div style={detailSectionStyle}>
@@ -1036,6 +1047,7 @@ export const ScreenDatacenterScene: React.FC<ScreenDatacenterSceneProps> = ({
   devices,
   cabinetEnvironments,
   cabinetTelemetry,
+  telemetryWarning,
   onSelectedCabinetChange,
   connections,
   connectionTypes,
@@ -1441,6 +1453,7 @@ export const ScreenDatacenterScene: React.FC<ScreenDatacenterSceneProps> = ({
             devices={devicesByCabinetId.get(cabinet.id) || []}
             environment={envByCabinetId.get(cabinet.id)}
             telemetryState={cabinetTelemetry[cabinet.id]}
+            telemetryWarning={telemetryWarning}
             position={[position.x, 1.36, position.z]}
             rotationY={rotationY}
             hovered={hoveredCabinetId === cabinet.id}
