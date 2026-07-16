@@ -2008,6 +2008,10 @@ const connectionSelectSql = (schemaName: string, whereClause = '') => `
     ${isoExpr('cc.created_at')} as created_at,
     ${isoExpr('cc.updated_at')} as updated_at
   from ${schemaName}.cable_connection cc
+  left join ${schemaName}.device source_device on source_device.id = cc.source_device_id
+  left join ${schemaName}.port source_port on source_port.id = cc.source_port_id
+  left join ${schemaName}.device target_device on target_device.id = cc.target_device_id
+  left join ${schemaName}.port target_port on target_port.id = cc.target_port_id
   ${whereClause}
 `;
 
@@ -2042,6 +2046,51 @@ const getConnections = async (req: Request, schema: string) => {
   if (req.query.cableNumber) {
     params.push(`%${String(req.query.cableNumber)}%`);
     filters.push(`cc.cable_number ilike $${params.length}`);
+  }
+  const connectionKeyword = optionalString(req.query.keyword);
+  if (connectionKeyword) {
+    params.push(`%${connectionKeyword}%`);
+    filters.push(`concat_ws(' ',
+      cc.cable_number,
+      cc.connection_type,
+      case cc.connection_type
+        when 'network' then '网络连线'
+        when 'power' then '电源连线'
+        when 'management' then '管理连线'
+        when 'storage' then '存储连线'
+        when 'stack' then '堆叠连线'
+      end,
+      cc.cable_type,
+      case cc.cable_type
+        when 'Cat5e' then 'Cat5e网线'
+        when 'Cat6' then 'Cat6网线'
+        when 'Cat6a' then 'Cat6a网线'
+        when 'Cat7' then 'Cat7网线'
+        when 'SingleModeFiber' then '单模光纤'
+        when 'MultiModeFiber' then '多模光纤'
+        when 'DAC' then 'DAC高速铜缆'
+        when 'AOC' then 'AOC有源光缆'
+        when 'PowerCable' then '电源线'
+      end,
+      source_device.name,
+      source_port.port_number,
+      source_port.port_alias,
+      source_port.port_type,
+      source_port.speed,
+      target_device.name,
+      target_port.port_number,
+      target_port.port_alias,
+      target_port.port_type,
+      target_port.speed,
+      cc.cable_length_m,
+      cc.cable_color,
+      cc.status,
+      case cc.status
+        when 'active' then '正常'
+        when 'inactive' then '未激活'
+        when 'faulty' then '故障'
+      end
+    ) ilike $${params.length}`);
   }
 
   const whereClause = filters.length ? `where ${filters.join(' and ')}` : '';

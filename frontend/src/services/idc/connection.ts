@@ -9,6 +9,7 @@ export async function getConnections(
         targetDeviceId?: string;
         status?: string;
         cableNumber?: string;
+        keyword?: string;
     },
 ) {
     return request<IDC.PageResult<IDC.Connection>>('/api/idc/connections', {

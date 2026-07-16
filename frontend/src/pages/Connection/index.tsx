@@ -17,6 +17,7 @@ import {
   Button,
   ColorPicker,
   Divider,
+  Input,
   message,
   Popconfirm,
   Space,
@@ -168,6 +169,7 @@ const ConnectionPage: React.FC = () => {
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [currentRow, setCurrentRow] = useState<IDC.Connection>();
+  const [keyword, setKeyword] = useState('');
   const [devices, setDevices] = useState<any[]>([]);
   const [portsById, setPortsById] = useState<Record<string, IDC.Port>>({});
   const [connectionTypes, setConnectionTypes] = useState<
@@ -415,15 +417,15 @@ const ConnectionPage: React.FC = () => {
         actionRef={actionRef}
         rowKey="id"
         columns={columns}
+        search={false}
+        params={{ keyword }}
+        debounceTime={300}
         scroll={{ x: 1520 }}
         request={async (params) => {
           const res = await getConnections({
             current: params.current,
             pageSize: params.pageSize,
-            connectionType: params.connectionType,
-            cableType: params.cableType,
-            status: params.status,
-            cableNumber: params.cableNumber,
+            keyword: params.keyword,
           });
           const data = res.data || [];
           await loadPortsForConnections(data);
@@ -434,6 +436,14 @@ const ConnectionPage: React.FC = () => {
           };
         }}
         toolBarRender={() => [
+          <Input
+            key="global-search"
+            allowClear
+            placeholder="全局搜索"
+            style={{ width: 280 }}
+            value={keyword}
+            onChange={(event) => setKeyword(event.target.value)}
+          />,
           <Button
             key="create"
             type="primary"
