@@ -14,10 +14,20 @@ import {
   Tooltip,
   theme,
 } from 'antd';
-import { Focus, Maximize2, Minimize2, ZoomIn, ZoomOut } from 'lucide-react';
+import {
+  ArrowLeft,
+  Focus,
+  Maximize2,
+  Minimize2,
+  ZoomIn,
+  ZoomOut,
+} from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { getConnectionsByDevice } from '@/services/idc/connection';
 import { getTopology } from '@/services/idc/dashboard';
 import { getAllDatacenters } from '@/services/idc/datacenter';
+import { getDevice } from '@/services/idc/device';
+import { getPortsByDevice } from '@/services/idc/port';
 import styles from './index.less';
 import {
   connectionColors,
@@ -39,10 +49,31 @@ interface TopologyEdge {
   source: string;
   target: string;
   type: string;
+  sourceDeviceId?: string;
+  sourcePortId?: string;
+  targetDeviceId?: string;
+  targetPortId?: string;
 }
 
 interface SelectedTopologyEdge extends TopologyEdge {
   id: string;
+}
+
+interface DetailPort {
+  id: string;
+  deviceId: string;
+  portNumber: string;
+  portAlias?: string;
+  portType?: string;
+  speed?: string;
+  status?: string;
+}
+
+interface DeviceDetailTopology {
+  focusDeviceId: string;
+  devices: TopologyNode[];
+  ports: DetailPort[];
+  connections: IDC.Connection[];
 }
 
 const GRAPH_HEIGHT = 640;
@@ -121,10 +152,13 @@ const TopologyPage: React.FC = () => {
   const [error, setError] = useState<string>();
   const [graphReady, setGraphReady] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [detailTopology, setDetailTopology] = useState<DeviceDetailTopology>();
+  const [detailLoading, setDetailLoading] = useState(false);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const graphRef = useRef<Graph | null>(null);
   const cardRef = useRef<HTMLDivElement>(null);
+  const detailRequestRef = useRef(0);
 
   const graphTheme = useMemo(
     () => ({
@@ -207,6 +241,8 @@ const TopologyPage: React.FC = () => {
     setGraphReady(false);
     setSelectedNode(undefined);
     setSelectedEdge(undefined);
+    setDetailTopology(undefined);
+    detailRequestRef.current += 1;
 
     getTopology(selectedDc)
       .then((res) => {
@@ -251,11 +287,298 @@ const TopologyPage: React.FC = () => {
     [edges],
   );
 
+  const displayedNodes = detailTopology?.devices || nodes;
+  const displayedEdgeCount = detailTopology?.connections.length ?? edges.length;
+  const displayedNodeMap = useMemo(
+    () => new Map(displayedNodes.map((node) => [node.id, node])),
+    [displayedNodes],
+  );
+  const detailPortMap = useMemo(
+    () => new Map(detailTopology?.ports.map((port) => [port.id, port]) || []),
+    [detailTopology],
+  );
+
+  const openDeviceDetail = useCallback(
+    async (deviceId: string) => {
+      const requestId = ++detailRequestRef.current;
+      setDetailLoading(true);
+      setError(undefined);
+      setGraphReady(false);
+      setSelectedNode(undefined);
+      setSelectedEdge(undefined);
+
+      try {
+        const connectionResponse = await getConnectionsByDevice(deviceId);
+        if (!connectionResponse.success || !connectionResponse.data) {
+          throw new Error('connection');
+        }
+
+        const connections = Array.from(
+          new Map(
+            connectionResponse.data.map((connection) => [
+              connection.id,
+              connection,
+            ]),
+          ).values(),
+        );
+        const deviceIds = Array.from(
+          new Set([
+            deviceId,
+            ...connections.flatMap((connection) => [
+              connection.sourceDeviceId,
+              connection.targetDeviceId,
+            ]),
+          ]),
+        );
+
+        const devices = await Promise.all(
+          deviceIds.map(async (id): Promise<TopologyNode> => {
+            const existing = nodeMap.get(id);
+            if (existing) return existing;
+
+            try {
+              const response = await getDevice(id);
+              if (response.success && response.data) {
+                return {
+                  id: response.data.id,
+                  label: response.data.name,
+                  type: response.data.template?.category || 'other',
+                  status: response.data.status,
+                };
+              }
+            } catch {
+              // 设备仍保留在图中，避免单条设备详情失败导致整个下钻视图不可用。
+            }
+
+            return { id, label: id, type: 'other', status: 'offline' };
+          }),
+        );
+
+        const portResponses = await Promise.all(
+          deviceIds.map(async (id) => {
+            try {
+              const response = await getPortsByDevice(id);
+              return response.success ? response.data || [] : [];
+            } catch {
+              return [];
+            }
+          }),
+        );
+        const connectedPortIds = new Set(
+          connections.flatMap((connection) => [
+            connection.sourcePortId,
+            connection.targetPortId,
+          ]),
+        );
+        const connectedPortMap = new Map<string, DetailPort>();
+        portResponses.flat().forEach((port) => {
+          if (!connectedPortIds.has(port.id)) return;
+          connectedPortMap.set(port.id, {
+            id: port.id,
+            deviceId: port.deviceId,
+            portNumber: port.portNumber,
+            portAlias: port.portAlias,
+            portType: port.portType,
+            speed: port.speed,
+            status: port.status,
+          });
+        });
+        connections.forEach((connection) => {
+          if (!connectedPortMap.has(connection.sourcePortId)) {
+            connectedPortMap.set(connection.sourcePortId, {
+              id: connection.sourcePortId,
+              deviceId: connection.sourceDeviceId,
+              portNumber:
+                connection.sourcePort?.portNumber || connection.sourcePortId,
+              portAlias: connection.sourcePort?.portAlias,
+              portType: connection.sourcePort?.portType,
+              speed: connection.sourcePort?.speed,
+              status: connection.sourcePort?.status,
+            });
+          }
+          if (!connectedPortMap.has(connection.targetPortId)) {
+            connectedPortMap.set(connection.targetPortId, {
+              id: connection.targetPortId,
+              deviceId: connection.targetDeviceId,
+              portNumber:
+                connection.targetPort?.portNumber || connection.targetPortId,
+              portAlias: connection.targetPort?.portAlias,
+              portType: connection.targetPort?.portType,
+              speed: connection.targetPort?.speed,
+              status: connection.targetPort?.status,
+            });
+          }
+        });
+        const ports = Array.from(connectedPortMap.values());
+
+        if (requestId !== detailRequestRef.current) return;
+        setDetailTopology({
+          focusDeviceId: deviceId,
+          devices,
+          ports,
+          connections,
+        });
+      } catch {
+        if (requestId === detailRequestRef.current) {
+          setError('端口级拓扑加载失败，请稍后重试');
+        }
+      } finally {
+        if (requestId === detailRequestRef.current) setDetailLoading(false);
+      }
+    },
+    [nodeMap],
+  );
+
+  const returnToDatacenterTopology = useCallback(() => {
+    detailRequestRef.current += 1;
+    setDetailTopology(undefined);
+    setDetailLoading(false);
+    setError(undefined);
+    setGraphReady(false);
+    setSelectedNode(undefined);
+    setSelectedEdge(undefined);
+  }, []);
+
   useEffect(() => {
-    if (!containerRef.current || nodes.length === 0 || loading) return;
+    const isDetailView = Boolean(detailTopology);
+    if (
+      !containerRef.current ||
+      loading ||
+      detailLoading ||
+      (!isDetailView && nodes.length === 0)
+    ) {
+      return;
+    }
 
     graphRef.current?.destroy();
     graphRef.current = null;
+
+    const activeDevices = detailTopology?.devices || nodes;
+    const activeNodeMap = new Map(activeDevices.map((node) => [node.id, node]));
+    const activeEdgeMap = new Map<string, SelectedTopologyEdge>();
+    const graphNodes: any[] = activeDevices.map((node) => {
+      const visualType = normalizeTopologyNodeType(node.type);
+      const nodeStyle = getThemedNodeStyle(
+        visualType,
+        typeColors[visualType] || typeColors.other,
+      );
+      return {
+        id: node.id,
+        type: nodeStyle.type,
+        data: { ...node, visualType, elementKind: 'device' },
+        style: {
+          ...nodeStyle,
+          fill: graphTheme.surfaceElevated,
+          lineWidth:
+            detailTopology?.focusDeviceId === node.id ? 4 : nodeStyle.lineWidth,
+          opacity: node.status === 'offline' ? 0.6 : 1,
+        },
+      };
+    });
+    const graphEdges: any[] = [];
+
+    if (detailTopology) {
+      const portById = new Map(
+        detailTopology.ports.map((port) => [port.id, port]),
+      );
+      detailTopology.ports.forEach((port) => {
+        graphNodes.push({
+          id: `port:${port.id}`,
+          type: 'circle',
+          data: {
+            ...port,
+            label: port.portAlias
+              ? `${port.portNumber} / ${port.portAlias}`
+              : port.portNumber,
+            elementKind: 'port',
+          },
+          style: {
+            size: 18,
+            fill:
+              port.status === 'error'
+                ? graphTheme.error
+                : port.status === 'down' || port.status === 'disabled'
+                  ? graphTheme.disabled
+                  : graphTheme.primary,
+            stroke: graphTheme.surfaceElevated,
+            lineWidth: 3,
+            labelPlacement: 'bottom',
+            labelOffsetY: 7,
+            labelFontSize: 10,
+            labelMaxWidth: 110,
+          },
+        });
+
+        const isFocusPort = port.deviceId === detailTopology.focusDeviceId;
+        graphEdges.push({
+          id: `membership:${port.deviceId}:${port.id}`,
+          source: isFocusPort ? port.deviceId : `port:${port.id}`,
+          target: isFocusPort ? `port:${port.id}` : port.deviceId,
+          data: { elementKind: 'membership' },
+          style: {
+            stroke: graphTheme.textSecondary,
+            lineWidth: 1.5,
+            lineDash: [5, 4],
+            opacity: 0.9,
+          },
+        });
+      });
+
+      detailTopology.connections.forEach((connection) => {
+        const focusIsSource =
+          connection.sourceDeviceId === detailTopology.focusDeviceId;
+        const layoutSourcePortId = focusIsSource
+          ? connection.sourcePortId
+          : connection.targetPortId;
+        const layoutTargetPortId = focusIsSource
+          ? connection.targetPortId
+          : connection.sourcePortId;
+        const id = `connection:${connection.id}`;
+        const type = connection.connectionType;
+        graphEdges.push({
+          id,
+          source: `port:${layoutSourcePortId}`,
+          target: `port:${layoutTargetPortId}`,
+          data: {
+            ...connection,
+            type,
+            elementKind: 'connection',
+            sourcePortNumber: portById.get(connection.sourcePortId)?.portNumber,
+            targetPortNumber: portById.get(connection.targetPortId)?.portNumber,
+          },
+          style: {
+            stroke: connectionColors[type] || graphTheme.border,
+            lineWidth: type === 'network' ? 3 : 2.5,
+          },
+        });
+        activeEdgeMap.set(id, {
+          id,
+          source: connection.sourceDeviceId,
+          target: connection.targetDeviceId,
+          type,
+          sourceDeviceId: connection.sourceDeviceId,
+          sourcePortId: connection.sourcePortId,
+          targetDeviceId: connection.targetDeviceId,
+          targetPortId: connection.targetPortId,
+        });
+      });
+    } else {
+      edges.forEach((edge, index) => {
+        const id = `${edge.source}-${edge.target}-${index}`;
+        graphEdges.push({
+          id,
+          source: edge.source,
+          target: edge.target,
+          data: { ...edge, elementKind: 'connection' },
+          style: {
+            stroke: connectionColors[edge.type] || graphTheme.border,
+            lineWidth: edge.type === 'network' ? 2.5 : 2,
+          },
+        });
+        const mappedEdge = edgeMap.get(id);
+        if (mappedEdge) activeEdgeMap.set(id, mappedEdge);
+      });
+    }
 
     const graph = new Graph({
       container: containerRef.current,
@@ -263,40 +586,12 @@ const TopologyPage: React.FC = () => {
       height: GRAPH_HEIGHT,
       autoFit: 'view',
       padding: [56, 64, 72, 64],
-      data: {
-        nodes: nodes.map((node) => {
-          const visualType = normalizeTopologyNodeType(node.type);
-          const nodeStyle = getThemedNodeStyle(
-            visualType,
-            typeColors[visualType] || typeColors.other,
-          );
-          return {
-            id: node.id,
-            type: nodeStyle.type,
-            data: { ...node, visualType },
-            style: {
-              ...nodeStyle,
-              fill: graphTheme.surfaceElevated,
-              opacity: node.status === 'offline' ? 0.6 : 1,
-            },
-          };
-        }),
-        edges: edges.map((edge, index) => ({
-          id: `${edge.source}-${edge.target}-${index}`,
-          source: edge.source,
-          target: edge.target,
-          data: edge,
-          style: {
-            stroke: connectionColors[edge.type] || graphTheme.border,
-            lineWidth: edge.type === 'network' ? 2.5 : 2,
-          },
-        })),
-      },
+      data: { nodes: graphNodes, edges: graphEdges },
       layout: {
         type: 'antv-dagre',
         rankdir: 'TB',
-        ranksep: 100,
-        nodesep: 48,
+        ranksep: isDetailView ? 72 : 100,
+        nodesep: isDetailView ? 38 : 48,
         controlPoints: true,
       },
       node: {
@@ -314,6 +609,7 @@ const TopologyPage: React.FC = () => {
           active: {
             lineWidth: 3,
             shadowBlur: 16,
+            opacity: 1,
           },
           selected: {
             lineWidth: 4,
@@ -329,12 +625,13 @@ const TopologyPage: React.FC = () => {
       edge: {
         type: 'cubic-vertical',
         style: {
-          endArrow: true,
+          endArrow: !isDetailView,
           endArrowSize: 7,
         },
         state: {
           active: {
             lineWidth: 4,
+            opacity: 1,
           },
           selected: {
             lineWidth: 4,
@@ -349,8 +646,9 @@ const TopologyPage: React.FC = () => {
         'drag-canvas',
         { type: 'zoom-canvas', sensitivity: 1.2 },
         'drag-element',
-        'click-select',
-        { type: 'hover-activate', degree: 1 },
+        ...(!isDetailView
+          ? ['click-select', { type: 'hover-activate', degree: 1 } as const]
+          : []),
       ],
       plugins: [
         {
@@ -373,11 +671,21 @@ const TopologyPage: React.FC = () => {
             const item = items?.[0];
             if (!item) return '';
             const data = item.data || {};
+            if (data.elementKind === 'membership') return '';
+            if (data.elementKind === 'port') {
+              return `<div class="${styles.graphTooltip}"><strong>${escapeHtml(
+                data.portNumber,
+              )}</strong><span>${escapeHtml(data.portType || '端口')} · ${escapeHtml(
+                data.speed || '-',
+              )}</span></div>`;
+            }
             if (item.source && item.target) {
               return `<div class="${styles.graphTooltip}"><strong>${escapeHtml(
                 connectionLabels[data.type] || data.type,
-              )}</strong><span>${escapeHtml(item.source)} → ${escapeHtml(
-                item.target,
+              )}</strong><span>${escapeHtml(
+                data.sourcePortNumber || item.source,
+              )} → ${escapeHtml(
+                data.targetPortNumber || item.target,
               )}</span></div>`;
             }
             return `<div class="${styles.graphTooltip}"><strong>${escapeHtml(
@@ -392,15 +700,99 @@ const TopologyPage: React.FC = () => {
       ],
     });
 
+    const clearDetailHighlight = () => {
+      if (!detailTopology) return;
+      const states = Object.fromEntries(
+        [...graphNodes, ...graphEdges].map((element) => [element.id, []]),
+      );
+      void graph.setElementState(states, false);
+    };
+
+    const highlightRelatedElements = (deviceId: string) => {
+      if (!detailTopology) return;
+
+      const highlightedDeviceIds = new Set([deviceId]);
+      const highlightedPortIds = new Set<string>();
+      const highlightedConnectionIds = new Set<string>();
+      const highlightedMembershipIds = new Set<string>();
+
+      detailTopology.connections.forEach((connection) => {
+        if (
+          connection.sourceDeviceId !== deviceId &&
+          connection.targetDeviceId !== deviceId
+        ) {
+          return;
+        }
+
+        highlightedDeviceIds.add(connection.sourceDeviceId);
+        highlightedDeviceIds.add(connection.targetDeviceId);
+        highlightedPortIds.add(`port:${connection.sourcePortId}`);
+        highlightedPortIds.add(`port:${connection.targetPortId}`);
+        highlightedConnectionIds.add(`connection:${connection.id}`);
+        highlightedMembershipIds.add(
+          `membership:${connection.sourceDeviceId}:${connection.sourcePortId}`,
+        );
+        highlightedMembershipIds.add(
+          `membership:${connection.targetDeviceId}:${connection.targetPortId}`,
+        );
+      });
+
+      const states: Record<string, string | string[]> = {};
+      graphNodes.forEach((node) => {
+        if (node.id === deviceId) {
+          states[node.id] = 'selected';
+        } else if (
+          highlightedDeviceIds.has(node.id) ||
+          highlightedPortIds.has(node.id)
+        ) {
+          states[node.id] = 'active';
+        } else {
+          states[node.id] = 'inactive';
+        }
+      });
+      graphEdges.forEach((edge) => {
+        if (highlightedConnectionIds.has(edge.id)) {
+          states[edge.id] = 'active';
+        } else if (highlightedMembershipIds.has(edge.id)) {
+          states[edge.id] = [];
+        } else {
+          states[edge.id] = 'inactive';
+        }
+      });
+      void graph.setElementState(states, false);
+    };
+
+    let lastNodeClick: { id: string; time: number } | undefined;
     graph.on('node:click', (event: any) => {
-      setSelectedNode(nodeMap.get(String(event.target?.id)));
+      const id = String(event.target?.id);
+      if (!isDetailView) {
+        const now = Date.now();
+        if (
+          lastNodeClick?.id === id &&
+          now - lastNodeClick.time <= 500 &&
+          activeNodeMap.has(id)
+        ) {
+          lastNodeClick = undefined;
+          void openDeviceDetail(id);
+          return;
+        }
+        lastNodeClick = { id, time: now };
+      } else if (activeNodeMap.has(id)) {
+        highlightRelatedElements(id);
+      } else {
+        return;
+      }
+      setSelectedNode(activeNodeMap.get(id));
       setSelectedEdge(undefined);
     });
     graph.on('edge:click', (event: any) => {
-      setSelectedEdge(edgeMap.get(String(event.target?.id)));
+      const selected = activeEdgeMap.get(String(event.target?.id));
+      if (!selected) return;
+      setSelectedEdge(selected);
       setSelectedNode(undefined);
     });
     graph.on('canvas:click', () => {
+      clearDetailHighlight();
       setSelectedNode(undefined);
       setSelectedEdge(undefined);
     });
@@ -415,7 +807,17 @@ const TopologyPage: React.FC = () => {
       graph.destroy();
       if (graphRef.current === graph) graphRef.current = null;
     };
-  }, [edgeMap, edges, graphTheme, loading, nodeMap, nodes, typeColors]);
+  }, [
+    detailLoading,
+    detailTopology,
+    edgeMap,
+    edges,
+    graphTheme,
+    loading,
+    nodes,
+    openDeviceDetail,
+    typeColors,
+  ]);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -430,7 +832,7 @@ const TopologyPage: React.FC = () => {
     });
     resizeObserver.observe(container);
     return () => resizeObserver.disconnect();
-  }, [nodes.length]);
+  }, [detailTopology, nodes.length]);
 
   useEffect(() => {
     const handleFullscreenChange = () => {
@@ -516,11 +918,13 @@ const TopologyPage: React.FC = () => {
 
         <div className={styles.summaryBar}>
           <Space className={styles.statistics} size={32} wrap>
-            <Statistic title="设备" value={nodes.length} />
-            <Statistic title="物理连线" value={edges.length} />
+            <Statistic title="设备" value={displayedNodes.length} />
+            <Statistic title="物理连线" value={displayedEdgeCount} />
             <Statistic
               title="异常设备"
-              value={nodes.filter((node) => node.status !== 'online').length}
+              value={
+                displayedNodes.filter((node) => node.status !== 'online').length
+              }
               valueStyle={{ color: graphTheme.error }}
             />
           </Space>
@@ -560,9 +964,23 @@ const TopologyPage: React.FC = () => {
         )}
 
         <div className={styles.topologyContainer}>
-          {loading ? (
+          {detailTopology && (
+            <Button
+              className={styles.backButton}
+              icon={<ArrowLeft size={15} />}
+              onClick={returnToDatacenterTopology}
+            >
+              返回一级拓扑
+            </Button>
+          )}
+          {loading || detailLoading ? (
             <div className={styles.loadingWrapper}>
-              <Spin size="large" tip="加载拓扑数据中..." />
+              <Spin
+                size="large"
+                tip={
+                  detailLoading ? '加载端口级拓扑中...' : '加载拓扑数据中...'
+                }
+              />
             </div>
           ) : nodes.length === 0 ? (
             <Empty description="暂无拓扑数据" className={styles.emptyState} />
@@ -641,11 +1059,11 @@ const TopologyPage: React.FC = () => {
                       />
                     </Descriptions.Item>
                     <Descriptions.Item label="源设备">
-                      {nodeMap.get(selectedEdge.source)?.label ||
+                      {displayedNodeMap.get(selectedEdge.source)?.label ||
                         selectedEdge.source}
                     </Descriptions.Item>
                     <Descriptions.Item label="目标设备">
-                      {nodeMap.get(selectedEdge.target)?.label ||
+                      {displayedNodeMap.get(selectedEdge.target)?.label ||
                         selectedEdge.target}
                     </Descriptions.Item>
                     <Descriptions.Item label="源设备 ID">
@@ -654,6 +1072,18 @@ const TopologyPage: React.FC = () => {
                     <Descriptions.Item label="目标设备 ID">
                       {selectedEdge.target}
                     </Descriptions.Item>
+                    {selectedEdge.sourcePortId && (
+                      <Descriptions.Item label="源端口">
+                        {detailPortMap.get(selectedEdge.sourcePortId)
+                          ?.portNumber || selectedEdge.sourcePortId}
+                      </Descriptions.Item>
+                    )}
+                    {selectedEdge.targetPortId && (
+                      <Descriptions.Item label="目标端口">
+                        {detailPortMap.get(selectedEdge.targetPortId)
+                          ?.portNumber || selectedEdge.targetPortId}
+                      </Descriptions.Item>
+                    )}
                   </Descriptions>
                 </Card>
               )}

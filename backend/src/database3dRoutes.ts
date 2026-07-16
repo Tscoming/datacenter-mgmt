@@ -35,10 +35,36 @@ const optionalString = (value: unknown) => {
 
 const optionalDate = (value: unknown) => optionalString(value);
 
+class PortOccupiedError extends Error {
+  readonly statusCode = 409;
+
+  constructor(portId: string, connectionId?: string, cableNumber?: string) {
+    super(
+      `端口 ${portId} 已被连线${cableNumber ? ` ${cableNumber}` : ''}${
+        connectionId ? `（${connectionId}）` : ''
+      }占用`,
+    );
+  }
+}
+
 const handleError = (res: Response, error: unknown) => {
-  res.status(500).json({
+  const databaseError = error as {
+    code?: string;
+    constraint?: string;
+    message?: string;
+  };
+  const isPortOccupancyConflict =
+    error instanceof PortOccupiedError ||
+    (databaseError.code === '23505' &&
+      databaseError.constraint === 'cable_connection_port_occupancy');
+
+  res.status(isPortOccupancyConflict ? 409 : 500).json({
     success: false,
-    errorMessage: error instanceof Error ? error.message : 'Database 3D route failed',
+    errorMessage: isPortOccupancyConflict
+      ? databaseError.message || '端口已被其他物理连线占用'
+      : error instanceof Error
+        ? error.message
+        : 'Database 3D route failed',
   });
 };
 
@@ -2171,10 +2197,62 @@ const syncConnectionPorts = async (
   }
 };
 
+const assertPortsAvailable = async (
+  req: Request,
+  schema: string,
+  portIds: string[],
+  excludedConnectionId?: string,
+) => {
+  const uniquePortIds = Array.from(new Set(portIds.filter(Boolean)));
+  if (uniquePortIds.length !== 2) {
+    throw new Error('源端口和目标端口必须是两个不同的有效端口');
+  }
+
+  const schemaName = quoteIdentifier(schema);
+  const result = await queryDatabase<{
+    id: string;
+    cable_number: string;
+    occupied_port_id: string;
+  }>(
+    req,
+    'connection.ports.available',
+    `
+      select
+        cc.id,
+        cc.cable_number,
+        case
+          when cc.source_port_id = any($1::text[]) then cc.source_port_id
+          else cc.target_port_id
+        end as occupied_port_id
+      from ${schemaName}.cable_connection cc
+      where ($2::text is null or cc.id <> $2)
+        and (
+          cc.source_port_id = any($1::text[])
+          or cc.target_port_id = any($1::text[])
+        )
+      order by cc.created_at, cc.id
+      limit 1
+    `,
+    [uniquePortIds, excludedConnectionId || null],
+  );
+
+  const conflict = result.rows[0];
+  if (conflict) {
+    throw new PortOccupiedError(
+      conflict.occupied_port_id,
+      conflict.id,
+      conflict.cable_number,
+    );
+  }
+};
+
 const createConnection = async (req: Request, schema: string) => {
   const schemaName = quoteIdentifier(schema);
   const body = req.body || {};
   const id = `conn-${crypto.randomBytes(4).toString('hex')}`;
+  const sourcePortId = String(body.sourcePortId || '');
+  const targetPortId = String(body.targetPortId || '');
+  await assertPortsAvailable(req, schema, [sourcePortId, targetPortId]);
   const result = await queryDatabase<{ id: string }>(
     req,
     'connection.create',
@@ -2207,14 +2285,14 @@ const createConnection = async (req: Request, schema: string) => {
       optionalString(body.cableColor) || '#3498db',
       body.cableLength === undefined || body.cableLength === '' ? null : toNumber(body.cableLength),
       String(body.sourceDeviceId || ''),
-      String(body.sourcePortId || ''),
+      sourcePortId,
       String(body.targetDeviceId || ''),
-      String(body.targetPortId || ''),
+      targetPortId,
       optionalString(body.description),
     ],
   );
 
-  await syncConnectionPorts(req, schema, [String(body.sourcePortId), String(body.targetPortId)], []);
+  await syncConnectionPorts(req, schema, [sourcePortId, targetPortId], []);
   return getConnection(req, schema, result.rows[0].id);
 };
 
@@ -2224,6 +2302,20 @@ const updateConnection = async (req: Request, schema: string, id: string) => {
   if (!previous) return null;
 
   const body = req.body || {};
+  const sourcePortId =
+    body.sourcePortId === undefined
+      ? previous.sourcePortId
+      : String(body.sourcePortId);
+  const targetPortId =
+    body.targetPortId === undefined
+      ? previous.targetPortId
+      : String(body.targetPortId);
+  await assertPortsAvailable(
+    req,
+    schema,
+    [sourcePortId, targetPortId],
+    id,
+  );
   const result = await queryDatabase<{ id: string }>(
     req,
     'connection.update',

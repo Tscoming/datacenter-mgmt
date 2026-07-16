@@ -193,6 +193,31 @@ const getDeviceDatacenterId = (deviceId: string) => {
     return device ? getDatacenterIdByCabinetId(device.cabinetId) : undefined;
 };
 
+const findPortConflict = (
+    sourcePortId: string,
+    targetPortId: string,
+    excludedConnectionId?: string,
+) => {
+    if (!sourcePortId || !targetPortId || sourcePortId === targetPortId) {
+        return { portId: sourcePortId || targetPortId, connection: undefined };
+    }
+
+    const portIds = new Set([sourcePortId, targetPortId]);
+    const connection = connectionsData.find(
+        item =>
+            item.id !== excludedConnectionId &&
+            (portIds.has(item.sourcePortId) || portIds.has(item.targetPortId)),
+    );
+    if (!connection) return undefined;
+
+    return {
+        portId: portIds.has(connection.sourcePortId)
+            ? connection.sourcePortId
+            : connection.targetPortId,
+        connection,
+    };
+};
+
 export default {
     // 获取连线列表
     'GET /api/idc/connections': async (req: Request, res: Response) => {
@@ -259,6 +284,16 @@ export default {
     'POST /api/idc/connections': async (req: Request, res: Response) => {
         await waitTime(500);
         const body = req.body as IDC.ConnectionCreateParams;
+        const conflict = findPortConflict(body.sourcePortId, body.targetPortId);
+        if (conflict) {
+            res.status(409).json({
+                success: false,
+                errorMessage: conflict.connection
+                    ? `端口 ${conflict.portId} 已被连线 ${conflict.connection.cableNumber}（${conflict.connection.id}）占用`
+                    : '源端口和目标端口必须是两个不同的有效端口',
+            });
+            return;
+        }
 
         const newConnection: IDC.Connection = {
             id: `conn-${uuidv4().slice(0, 8)}`,
@@ -290,6 +325,20 @@ export default {
         const index = connectionsData.findIndex(c => c.id === id);
         if (index === -1) {
             res.status(404).json({ success: false, errorMessage: '连线不存在' });
+            return;
+        }
+
+        const current = connectionsData[index];
+        const sourcePortId = body.sourcePortId ?? current.sourcePortId;
+        const targetPortId = body.targetPortId ?? current.targetPortId;
+        const conflict = findPortConflict(sourcePortId, targetPortId, current.id);
+        if (conflict) {
+            res.status(409).json({
+                success: false,
+                errorMessage: conflict.connection
+                    ? `端口 ${conflict.portId} 已被连线 ${conflict.connection.cableNumber}（${conflict.connection.id}）占用`
+                    : '源端口和目标端口必须是两个不同的有效端口',
+            });
             return;
         }
 
