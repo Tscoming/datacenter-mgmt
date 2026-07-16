@@ -114,17 +114,26 @@ const getDatacenters = async (req: Request, schema: string) => {
   const params: unknown[] = [];
   const filters: string[] = [];
 
-  if (req.query.name) {
-    params.push(`%${String(req.query.name)}%`);
-    filters.push(`dc.name ilike $${params.length}`);
-  }
-  if (req.query.status) {
-    params.push(String(req.query.status));
-    filters.push(`dc.lifecycle_status = $${params.length}`);
-  }
-  if (req.query.code) {
-    params.push(`%${String(req.query.code)}%`);
-    filters.push(`dc.code ilike $${params.length}`);
+  const keyword = optionalString(req.query.keyword);
+  if (keyword) {
+    params.push(`%${keyword}%`);
+    filters.push(`concat_ws(' ',
+      dc.name,
+      dc.code,
+      dc.address,
+      dc.area_sqm,
+      coalesce(cs.total_cabinets, 0),
+      coalesce(cs.used_cabinets, 0),
+      dc.lifecycle_status,
+      case dc.lifecycle_status
+        when 'active' then '运行中'
+        when 'maintenance' then '维护中'
+        when 'offline' then '已下线'
+      end,
+      dc.contact,
+      dc.phone,
+      ${isoExpr('dc.updated_at')}
+    ) ilike $${params.length}`);
   }
 
   const whereClause = filters.length ? `where ${filters.join(' and ')}` : '';
@@ -365,6 +374,37 @@ const getDeviceTemplates = async (req: Request, schema: string) => {
   if (req.query.isBuiltin !== undefined) {
     params.push(String(req.query.isBuiltin) === 'true');
     filters.push(`dt.is_builtin = $${params.length}`);
+  }
+  const templateKeyword = optionalString(req.query.keyword);
+  if (templateKeyword) {
+    params.push(`%${templateKeyword}%`);
+    filters.push(`(
+      concat_ws(' ',
+        dt.name,
+        dt.category,
+        case dt.category
+          when 'switch' then '交换机'
+          when 'router' then '路由器'
+          when 'server' then '服务器'
+          when 'storage' then '存储'
+          when 'firewall' then '防火墙'
+          when 'loadbalancer' then '负载均衡'
+          when 'other' then '其他'
+        end,
+        dt.brand,
+        dt.model,
+        dt.u_height,
+        case when dt.is_builtin then '内置' else '' end,
+        dt.description
+      ) ilike $${params.length}
+      or exists (
+        select 1
+        from ${schemaName}.port_group_template keyword_pgt
+        where keyword_pgt.template_id = dt.id
+          and concat_ws(' ', keyword_pgt.name, keyword_pgt.port_type, keyword_pgt.port_count, keyword_pgt.speed)
+            ilike $${params.length}
+      )
+    )`);
   }
 
   const where = filters.length ? `where ${filters.join(' and ')}` : '';
@@ -738,6 +778,33 @@ const getDevices = async (req: Request, schema: string) => {
   if (req.query.isMounted === 'false') {
     filters.push('ri.cabinet_id is null');
   }
+  const deviceKeyword = optionalString(req.query.keyword);
+  if (deviceKeyword) {
+    params.push(`%${deviceKeyword}%`);
+    filters.push(`concat_ws(' ',
+      d.name,
+      d.asset_code,
+      d.serial_number,
+      dt.brand,
+      dt.model,
+      c.name,
+      ri.start_u,
+      ri.end_u,
+      host(d.management_ip),
+      d.operational_status,
+      case d.operational_status
+        when 'online' then '在线'
+        when 'offline' then '离线'
+        when 'warning' then '告警'
+        when 'error' then '故障'
+        when 'maintenance' then '维护中'
+      end,
+      d.owner,
+      d.department,
+      case when ri.cabinet_id is null then '已下架' else '已上架' end,
+      ${dateExpr('d.warranty_expiry')}
+    ) ilike $${params.length}`);
+  }
 
   const where = filters.length ? `where ${filters.join(' and ')}` : '';
   params.push(pageSize, offset);
@@ -758,6 +825,7 @@ const getDevices = async (req: Request, schema: string) => {
           and ri.asset_type = 'device'
           and ri.valid_to is null
         left join ${schemaName}.cabinet c on c.id = ri.cabinet_id
+        left join ${schemaName}.device_template dt on dt.id = d.template_id
         ${where}
       ),
       total_count as (
@@ -887,6 +955,29 @@ const getCabinets = async (req: Request, schema: string) => {
   if (req.query.code) {
     params.push(`%${String(req.query.code)}%`);
     filters.push(`c.code ilike $${params.length}`);
+  }
+  const cabinetKeyword = optionalString(req.query.keyword);
+  if (cabinetKeyword) {
+    params.push(`%${cabinetKeyword}%`);
+    filters.push(`concat_ws(' ',
+      c.name,
+      c.code,
+      dc.name,
+      c.row_no,
+      c.column_no,
+      coalesce(uu.used_u, 0),
+      c.u_height,
+      coalesce(pu.current_power, 0),
+      c.max_power_w,
+      c.health_status,
+      case c.health_status
+        when 'normal' then '正常'
+        when 'warning' then '告警'
+        when 'error' then '故障'
+        when 'offline' then '离线'
+      end,
+      ${isoExpr('c.updated_at')}
+    ) ilike $${params.length}`);
   }
 
   const whereClause = filters.length ? `where ${filters.join(' and ')}` : '';
@@ -2439,6 +2530,31 @@ const getPduDevices = async (req: Request, schema: string) => {
     params.push(String(req.query.powerPath));
     filters.push(`p.power_path = $${params.length}`);
   }
+  const pduKeyword = optionalString(req.query.keyword);
+  if (pduKeyword) {
+    params.push(`%${pduKeyword}%`);
+    filters.push(`concat_ws(' ',
+      p.name,
+      p.asset_code,
+      p.power_path,
+      case p.power_path when 'A' then 'A路 A路电源' when 'B' then 'B路 B路电源' end,
+      c.name,
+      p.cabinet_id,
+      ri.start_u,
+      ri.end_u,
+      p.output_ports,
+      p.current_load_w,
+      p.max_load_w,
+      p.operational_status,
+      case p.operational_status
+        when 'online' then '在线'
+        when 'offline' then '离线'
+        when 'warning' then '告警'
+        when 'error' then '故障'
+      end,
+      host(p.management_ip)
+    ) ilike $${params.length}`);
+  }
 
   const where = filters.length ? `where ${filters.join(' and ')}` : '';
   const result = await queryDatabase<any>(
@@ -2468,6 +2584,7 @@ const getPduDevices = async (req: Request, schema: string) => {
         on ri.pdu_id = p.id
         and ri.asset_type = 'pdu'
         and ri.valid_to is null
+      left join ${schemaName}.cabinet c on c.id = p.cabinet_id
       ${where}
       order by p.id
     `,

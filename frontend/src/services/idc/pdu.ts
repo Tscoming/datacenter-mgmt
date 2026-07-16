@@ -44,6 +44,7 @@ export interface PDUTemplate {
 export async function getPDUDevices(params?: {
     cabinetId?: string;
     powerPath?: 'A' | 'B';
+    keyword?: string;
 }) {
     return request<{
         success: boolean;

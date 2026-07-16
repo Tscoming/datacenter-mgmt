@@ -8,6 +8,7 @@ export async function getCabinets(
         name?: string;
         status?: string;
         code?: string;
+        keyword?: string;
     },
 ) {
     return request<IDC.PageResult<IDC.Cabinet>>('/api/idc/cabinets', {

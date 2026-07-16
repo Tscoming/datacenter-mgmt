@@ -13,6 +13,7 @@ import {
   Button,
   Card,
   Descriptions,
+  Input,
   List,
   Modal,
   message,
@@ -70,6 +71,7 @@ const DeviceTemplatePage: React.FC = () => {
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [detailModalOpen, setDetailModalOpen] = useState(false);
   const [currentRow, setCurrentRow] = useState<IDC.DeviceTemplate>();
+  const [keyword, setKeyword] = useState('');
   const [categories, setCategories] = useState<
     { value: string; label: string }[]
   >([]);
@@ -280,14 +282,15 @@ const DeviceTemplatePage: React.FC = () => {
         actionRef={actionRef}
         rowKey="id"
         columns={columns}
+        search={false}
+        params={{ keyword }}
+        debounceTime={300}
         scroll={{ x: 1400 }}
         request={async (params) => {
           const res = await getDeviceTemplates({
             current: params.current,
             pageSize: params.pageSize,
-            category: params.category,
-            brand: params.brand,
-            name: params.name,
+            keyword: params.keyword,
           });
           return {
             data: res.data || [],
@@ -296,6 +299,14 @@ const DeviceTemplatePage: React.FC = () => {
           };
         }}
         toolBarRender={() => [
+          <Input
+            key="global-search"
+            allowClear
+            placeholder="全局搜索"
+            style={{ width: 280 }}
+            value={keyword}
+            onChange={(event) => setKeyword(event.target.value)}
+          />,
           <Button
             key="create"
             type="primary"

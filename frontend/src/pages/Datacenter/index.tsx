@@ -10,6 +10,7 @@ import {
 import { history } from '@umijs/max';
 import {
   Button,
+  Input,
   message,
   Popconfirm,
   Progress,
@@ -40,6 +41,7 @@ const DatacenterPage: React.FC = () => {
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [currentRow, setCurrentRow] = useState<IDC.Datacenter>();
+  const [keyword, setKeyword] = useState('');
 
   const statusMap: Record<string, { color: string; text: string }> = {
     active: { color: 'success', text: '运行中' },
@@ -222,14 +224,15 @@ const DatacenterPage: React.FC = () => {
         actionRef={actionRef}
         rowKey="id"
         columns={columns}
+        search={false}
+        params={{ keyword }}
+        debounceTime={300}
         scroll={{ x: 1300 }}
         request={async (params, _sort) => {
           const res = await getDatacenters({
             current: params.current,
             pageSize: params.pageSize,
-            name: params.name,
-            status: params.status,
-            code: params.code,
+            keyword: params.keyword,
           });
           return {
             data: res.data || [],
@@ -238,6 +241,14 @@ const DatacenterPage: React.FC = () => {
           };
         }}
         toolBarRender={() => [
+          <Input
+            key="global-search"
+            allowClear
+            placeholder="全局搜索"
+            style={{ width: 280 }}
+            value={keyword}
+            onChange={(event) => setKeyword(event.target.value)}
+          />,
           <Button
             key="create"
             type="primary"

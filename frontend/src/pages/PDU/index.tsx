@@ -15,6 +15,7 @@ import {
   Col,
   Descriptions,
   Drawer,
+  Input,
   message,
   Popconfirm,
   Progress,
@@ -79,6 +80,7 @@ const PDUPage: React.FC = () => {
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [detailDrawerOpen, setDetailDrawerOpen] = useState(false);
   const [currentRow, setCurrentRow] = useState<PDUDevice>();
+  const [keyword, setKeyword] = useState('');
   const [_templates, setTemplates] = useState<any[]>([]);
   const [cabinets, setCabinets] = useState<any[]>([]);
   const [pduStats, setPduStats] = useState({
@@ -360,11 +362,13 @@ const PDUPage: React.FC = () => {
         actionRef={actionRef}
         rowKey="id"
         columns={columns}
+        search={false}
+        params={{ keyword }}
+        debounceTime={300}
         scroll={{ x: 1400 }}
         request={async (params) => {
           const res = await getPDUDevices({
-            cabinetId: params.cabinetId,
-            powerPath: params['pduData,powerPath'],
+            keyword: params.keyword,
           });
           if (res.success && res.data) {
             updateStats(res.data);
@@ -376,6 +380,14 @@ const PDUPage: React.FC = () => {
           };
         }}
         toolBarRender={() => [
+          <Input
+            key="global-search"
+            allowClear
+            placeholder="全局搜索"
+            style={{ width: 280 }}
+            value={keyword}
+            onChange={(event) => setKeyword(event.target.value)}
+          />,
           <Button
             key="create"
             type="primary"

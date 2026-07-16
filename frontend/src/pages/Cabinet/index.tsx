@@ -1,7 +1,7 @@
 import { PageContainer } from '@ant-design/pro-components';
 import { ProTable, ModalForm, ProForm, ProFormText, ProFormTextArea, ProFormSelect, ProFormDigit } from '@ant-design/pro-components';
 import type { ProColumns, ActionType } from '@ant-design/pro-components';
-import { Alert, Button, Descriptions, Empty, Form, message, Modal, Popconfirm, Progress, Space, Spin, Tabs, Tag, Tooltip } from 'antd';
+import { Alert, Button, Descriptions, Empty, Form, Input, message, Modal, Popconfirm, Progress, Space, Spin, Tabs, Tag, Tooltip } from 'antd';
 import { useRef, useState, useEffect } from 'react';
 import {
     Server,
@@ -48,6 +48,7 @@ const CabinetPage: React.FC = () => {
     const [createModalOpen, setCreateModalOpen] = useState(false);
     const [editModalOpen, setEditModalOpen] = useState(false);
     const [currentRow, setCurrentRow] = useState<IDC.Cabinet>();
+    const [keyword, setKeyword] = useState('');
     const [datacenters, setDatacenters] = useState<{ id: string; name: string }[]>([]);
     const [cabinetEditForm] = Form.useForm();
     const [telemetryForm] = Form.useForm();
@@ -352,15 +353,15 @@ const CabinetPage: React.FC = () => {
                 actionRef={actionRef}
                 rowKey="id"
                 columns={columns}
+                search={false}
+                params={{ keyword }}
+                debounceTime={300}
                 scroll={{ x: 1500 }}
                 request={async (params) => {
                     const res = await getCabinets({
                         current: params.current,
                         pageSize: params.pageSize,
-                        datacenterId: params.datacenterId,
-                        name: params.name,
-                        status: params.status,
-                        code: params.code,
+                        keyword: params.keyword,
                     });
                     return {
                         data: res.data || [],
@@ -369,6 +370,14 @@ const CabinetPage: React.FC = () => {
                     };
                 }}
                 toolBarRender={() => [
+                    <Input
+                        key="global-search"
+                        allowClear
+                        placeholder="全局搜索"
+                        style={{ width: 280 }}
+                        value={keyword}
+                        onChange={(event) => setKeyword(event.target.value)}
+                    />,
                     <Button
                         key="create"
                         type="primary"

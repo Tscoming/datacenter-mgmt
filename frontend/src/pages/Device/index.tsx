@@ -14,6 +14,7 @@ import {
   Button,
   Descriptions,
   Drawer,
+  Input,
   message,
   Popconfirm,
   Space,
@@ -223,6 +224,7 @@ const DevicePage: React.FC = () => {
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [detailDrawerOpen, setDetailDrawerOpen] = useState(false);
   const [currentRow, setCurrentRow] = useState<IDC.Device>();
+  const [keyword, setKeyword] = useState('');
   const [templates, setTemplates] = useState<any[]>([]);
   const [cabinets, setCabinets] = useState<any[]>([]);
 
@@ -784,17 +786,15 @@ const DevicePage: React.FC = () => {
         actionRef={actionRef}
         rowKey="id"
         columns={columns}
+        search={false}
+        params={{ keyword }}
+        debounceTime={300}
         scroll={{ x: 1600 }}
         request={async (params) => {
           const res = await getDevices({
             current: params.current,
             pageSize: params.pageSize,
-            cabinetId: params.cabinetId,
-            name: params.name,
-            status: params.status,
-            assetCode: params.assetCode,
-            managementIp: params.managementIp,
-            department: params.department,
+            keyword: params.keyword,
           });
           return {
             data: res.data || [],
@@ -803,6 +803,14 @@ const DevicePage: React.FC = () => {
           };
         }}
         toolBarRender={() => [
+          <Input
+            key="global-search"
+            allowClear
+            placeholder="全局搜索"
+            style={{ width: 280 }}
+            value={keyword}
+            onChange={(event) => setKeyword(event.target.value)}
+          />,
           <Button
             key="create"
             type="primary"

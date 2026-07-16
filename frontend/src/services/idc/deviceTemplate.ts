@@ -7,6 +7,7 @@ export async function getDeviceTemplates(
         brand?: string;
         name?: string;
         isBuiltin?: string;
+        keyword?: string;
     },
 ) {
     return request<IDC.PageResult<IDC.DeviceTemplate>>('/api/idc/device-templates', {

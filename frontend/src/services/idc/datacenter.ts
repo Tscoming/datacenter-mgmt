@@ -2,7 +2,7 @@ import { request } from '@umijs/max';
 
 /** 获取数据中心列表 */
 export async function getDatacenters(
-    params?: IDC.PageParams & { name?: string; status?: string; code?: string },
+    params?: IDC.PageParams & { keyword?: string },
 ) {
     return request<IDC.PageResult<IDC.Datacenter>>('/api/idc/datacenters', {
         method: 'GET',
