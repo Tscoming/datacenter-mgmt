@@ -381,6 +381,7 @@ const DigitalTwinScreen: React.FC = () => {
   const [enabledConnectionTypes, setEnabledConnectionTypes] = useState<string[]>([]);
   const [showConnections, setShowConnections] = useState(false);
   const [showCabinetNames, setShowCabinetNames] = useState(false);
+  const [showHeatmap, setShowHeatmap] = useState(false);
   const [sceneMenuOpen, setSceneMenuOpen] = useState(false);
   const [currentTime, setCurrentTime] = useState(new Date());
   const [cabinetTelemetry, setCabinetTelemetry] = useState<CabinetTelemetryStateMap>({});
@@ -724,6 +725,19 @@ const DigitalTwinScreen: React.FC = () => {
               ))}
             </div>
           )}
+          {showHeatmap && (
+            <div className={styles.sceneHeatmapLegend}>
+              <span>温度热力图</span>
+              <div className={styles.sceneHeatmapGradient} />
+              <div className={styles.sceneHeatmapScale}>
+                <span>≤18℃</span>
+                <span>22℃</span>
+                <span>26℃</span>
+                <span>30℃</span>
+                <span>&gt;30℃</span>
+              </div>
+            </div>
+          )}
           <div className={styles.sceneMenu}>
             <button
               type="button"
@@ -755,6 +769,14 @@ const DigitalTwinScreen: React.FC = () => {
                     onChange={setShowConnections}
                   />
                 </div>
+                <div className={styles.sceneSwitch}>
+                  <span>显示热力图</span>
+                  <Switch
+                    size="small"
+                    checked={showHeatmap}
+                    onChange={setShowHeatmap}
+                  />
+                </div>
               </div>
             )}
           </div>
@@ -779,6 +801,7 @@ const DigitalTwinScreen: React.FC = () => {
                 connectionTypes={connectionTypes}
                 showConnections={showConnections}
                 showCabinetNames={showCabinetNames}
+                showHeatmap={showHeatmap}
                 enabledConnectionTypes={enabledConnectionTypes}
               />
             </Suspense>

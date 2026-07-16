@@ -24,6 +24,7 @@ interface ScreenDatacenterSceneProps {
   connectionTypes: { value: string; label: string; color: string }[];
   showConnections: boolean;
   showCabinetNames: boolean;
+  showHeatmap: boolean;
   enabledConnectionTypes: string[];
 }
 
@@ -51,6 +52,11 @@ const AIRFLOW_PARTICLE_COUNT = 72;
 interface CabinetScenePosition {
   x: number;
   z: number;
+}
+
+interface CabinetHeatmapPoint extends CabinetScenePosition {
+  cabinetId: string;
+  temperature: number;
 }
 
 interface CabinetConnectionLine {
@@ -116,6 +122,67 @@ const StatusLight: React.FC<{ color: string; alerting: boolean; position: [numbe
     </mesh>
   );
 };
+
+const temperatureColor = (temperature: number) => {
+  if (temperature <= 18) return '#2b83ff';
+  if (temperature <= 22) return '#00eaff';
+  if (temperature <= 26) return '#16f19a';
+  if (temperature <= 28) return '#ffe066';
+  if (temperature <= 30) return '#ff9f43';
+  return '#ff3d71';
+};
+
+const CabinetHeatmapLayer: React.FC<{ points: CabinetHeatmapPoint[] }> = ({ points }) => (
+  <group>
+    {points.map((point) => {
+      const color = temperatureColor(point.temperature);
+      return (
+        <group key={point.cabinetId} position={[point.x, 0.012, point.z]}>
+          <mesh rotation={[-Math.PI / 2, 0, 0]} raycast={disableRaycast}>
+            <circleGeometry args={[0.82, 48]} />
+            <meshBasicMaterial
+              color={color}
+              transparent
+              opacity={0.34}
+              blending={THREE.AdditiveBlending}
+              depthWrite={false}
+              toneMapped={false}
+            />
+          </mesh>
+          <mesh position={[0, 1.36, 0]} raycast={disableRaycast}>
+            <cylinderGeometry args={[0.34, 0.68, 2.72, 32, 1, true]} />
+            <meshBasicMaterial
+              color={color}
+              transparent
+              opacity={0.16}
+              blending={THREE.AdditiveBlending}
+              depthWrite={false}
+              side={THREE.DoubleSide}
+              toneMapped={false}
+            />
+          </mesh>
+          <Html position={[0, 3.05, 0]} center style={{ pointerEvents: 'none' }}>
+            <div
+              style={{
+                padding: '2px 6px',
+                color: '#ffffff',
+                fontSize: 10,
+                fontWeight: 700,
+                whiteSpace: 'nowrap',
+                border: `1px solid ${color}`,
+                borderRadius: 4,
+                background: 'rgba(3, 18, 30, 0.88)',
+                boxShadow: `0 0 10px ${color}`,
+              }}
+            >
+              {point.temperature.toFixed(1)}℃
+            </div>
+          </Html>
+        </group>
+      );
+    })}
+  </group>
+);
 
 const detailSectionStyle = {
   marginTop: 8,
@@ -1053,6 +1120,7 @@ export const ScreenDatacenterScene: React.FC<ScreenDatacenterSceneProps> = ({
   connectionTypes,
   showConnections,
   showCabinetNames,
+  showHeatmap,
   enabledConnectionTypes,
 }) => {
   const [hoveredCabinetId, setHoveredCabinetId] = useState<string | null>(null);
@@ -1139,6 +1207,18 @@ export const ScreenDatacenterScene: React.FC<ScreenDatacenterSceneProps> = ({
     });
     return map;
   }, [cabinets, layoutByCabinetId]);
+  const cabinetHeatmapPoints = useMemo(
+    () =>
+      cabinets.flatMap((cabinet) => {
+        const position = cabinetPositions.get(cabinet.id);
+        const temperature =
+          cabinetTelemetry[cabinet.id]?.telemetry?.temperatureC ??
+          envByCabinetId.get(cabinet.id)?.avgTemperature;
+        if (!position || temperature === undefined || !Number.isFinite(temperature)) return [];
+        return [{ cabinetId: cabinet.id, temperature, ...position }];
+      }),
+    [cabinetPositions, cabinetTelemetry, cabinets, envByCabinetId],
+  );
   const cabinetConnectionLines = useMemo(() => {
     const deviceCabinetIdByDeviceId = new Map(
       devices.map((device) => [device.id, device.cabinetId] as const),
@@ -1440,6 +1520,8 @@ export const ScreenDatacenterScene: React.FC<ScreenDatacenterSceneProps> = ({
           cabinetPositions={cabinetPositions}
         />
       )}
+
+      {showHeatmap && <CabinetHeatmapLayer points={cabinetHeatmapPoints} />}
 
       {cabinets.map((cabinet) => {
         const layoutItem = layoutByCabinetId.get(cabinet.id);
