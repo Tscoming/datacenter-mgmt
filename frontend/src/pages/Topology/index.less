@@ -1,27 +1,130 @@
+.toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.datacenterSelect {
+  width: 250px;
+}
+
+.summaryBar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 12px 16px;
+  margin-bottom: 16px;
+  background: var(--topology-fill-alter);
+  border: 1px solid var(--topology-border);
+  border-radius: 8px;
+}
+
+.statistics {
+  min-height: 48px;
+}
+
+.summaryBar :global(.ant-statistic-title) {
+  margin-bottom: 0;
+  font-size: 12px;
+}
+
+.summaryBar :global(.ant-statistic-content) {
+  font-size: 20px;
+}
+
 .legend {
-    padding: 12px 16px;
-    background: #fafafa;
-    border-radius: 8px;
-    margin-bottom: 16px;
+  display: flex;
+  align-items: flex-start;
+  flex-direction: column;
+  gap: 8px;
+  text-align: left;
+}
+
+.legendRow {
+  min-height: 22px;
+}
+
+.errorAlert {
+  margin-bottom: 16px;
 }
 
 .topologyContainer {
-    border: 1px solid #f0f0f0;
-    border-radius: 8px;
-    background: linear-gradient(135deg, #f8f9fa 0%, #ffffff 100%);
-    overflow: hidden;
-    min-height: 600px;
-    position: relative;
+  position: relative;
+  min-height: 640px;
+  overflow: hidden;
+  color: var(--topology-text);
+  background: linear-gradient(
+    135deg,
+    var(--topology-canvas) 0%,
+    var(--topology-surface) 100%
+  );
+  border: 1px solid var(--topology-border);
+  border-radius: 8px;
 }
 
 .graphContainer {
-    width: 100%;
-    height: 600px;
+  width: 100%;
+  height: 640px;
+  transition: opacity 0.2s ease;
 }
 
 .loadingWrapper {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    height: 600px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 640px;
+}
+
+.emptyState {
+  padding-top: 240px;
+}
+
+.detailCard {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  z-index: 10;
+  width: 300px;
+  box-shadow: var(--topology-box-shadow);
+}
+
+.graphTooltip {
+  display: flex;
+  min-width: 150px;
+  padding: 4px;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--topology-text);
+  background: var(--topology-surface-elevated);
+}
+
+.fullscreenCard {
+  width: 100vw;
+  height: 100vh;
+  overflow: auto;
+  background: var(--topology-surface);
+  border-radius: 0;
+}
+
+.fullscreenCard .graphContainer,
+.fullscreenCard .loadingWrapper,
+.fullscreenCard .topologyContainer {
+  min-height: calc(100vh - 190px);
+  height: calc(100vh - 190px);
+}
+
+@media (max-width: 900px) {
+  .toolbar,
+  .summaryBar {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .datacenterSelect {
+    width: 220px;
+  }
 }
