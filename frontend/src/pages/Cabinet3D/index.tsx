@@ -1,9 +1,19 @@
 import { PageContainer } from '@ant-design/pro-components';
 import { history, useSearchParams } from '@umijs/max';
-import { Card, Descriptions, Empty, Space, Spin, Tag, Typography } from 'antd';
+import {
+  Card,
+  Descriptions,
+  Empty,
+  Space,
+  Spin,
+  Tabs,
+  Tag,
+  Typography,
+} from 'antd';
 import { Server } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { CabinetFrontViewContent } from '@/components/CabinetFrontView';
+import { DevicePortViewContent } from '@/components/DevicePortView';
 import { getCabinet } from '@/services/idc/cabinet';
 import { getDevicesByCabinet } from '@/services/idc/device';
 import { getAllDeviceTemplates } from '@/services/idc/deviceTemplate';
@@ -63,80 +73,115 @@ const DeviceDetail: React.FC<DeviceDetailProps> = ({
         </Space>
       }
     >
-      <div className={styles.deviceHeader}>
-        <div>
-          <h3>{device.name}</h3>
-          <Text type="secondary">{text(device.assetCode)}</Text>
-        </div>
-        <Tag color={status.color}>{status.text}</Tag>
-      </div>
+      <Tabs
+        items={[
+          {
+            key: 'properties',
+            label: '设备属性',
+            children: (
+              <>
+                <div className={styles.deviceHeader}>
+                  <div>
+                    <h3>{device.name}</h3>
+                    <Text type="secondary">{text(device.assetCode)}</Text>
+                  </div>
+                  <Tag color={status.color}>{status.text}</Tag>
+                </div>
 
-      <Descriptions column={1} bordered size="small">
-        <Descriptions.Item label="设备ID">{device.id}</Descriptions.Item>
-        <Descriptions.Item label="资产编码">
-          {text(device.assetCode)}
-        </Descriptions.Item>
-        <Descriptions.Item label="设备名称">
-          {text(device.name)}
-        </Descriptions.Item>
-        <Descriptions.Item label="运行状态">
-          <Tag color={status.color}>{status.text}</Tag>
-        </Descriptions.Item>
-        <Descriptions.Item label="所属机柜">
-          {cabinet ? `${cabinet.name} (${cabinet.code})` : text(device.cabinetId)}
-        </Descriptions.Item>
-        <Descriptions.Item label="U位">
-          U{device.startU}
-          {device.startU !== device.endU ? `-U${device.endU}` : ''}
-        </Descriptions.Item>
-        <Descriptions.Item label="管理IP">
-          {text(device.managementIp)}
-        </Descriptions.Item>
-        <Descriptions.Item label="序列号">
-          {text(device.serialNumber)}
-        </Descriptions.Item>
-        <Descriptions.Item label="供应商">{text(device.vendor)}</Descriptions.Item>
-        <Descriptions.Item label="负责人">{text(device.owner)}</Descriptions.Item>
-        <Descriptions.Item label="所属部门">
-          {text(device.department)}
-        </Descriptions.Item>
-        <Descriptions.Item label="是否已上架">
-          {booleanText(device.isMounted)}
-        </Descriptions.Item>
-        <Descriptions.Item label="采购日期">
-          {text(device.purchaseDate)}
-        </Descriptions.Item>
-        <Descriptions.Item label="质保到期">
-          {text(device.warrantyExpiry)}
-        </Descriptions.Item>
-        <Descriptions.Item label="描述">
-          {text(device.description)}
-        </Descriptions.Item>
-        <Descriptions.Item label="创建时间">
-          {text(device.createdAt)}
-        </Descriptions.Item>
-        <Descriptions.Item label="更新时间">
-          {text(device.updatedAt)}
-        </Descriptions.Item>
-      </Descriptions>
+                <Descriptions column={1} bordered size="small">
+                  <Descriptions.Item label="设备ID">
+                    {device.id}
+                  </Descriptions.Item>
+                  <Descriptions.Item label="资产编码">
+                    {text(device.assetCode)}
+                  </Descriptions.Item>
+                  <Descriptions.Item label="设备名称">
+                    {text(device.name)}
+                  </Descriptions.Item>
+                  <Descriptions.Item label="运行状态">
+                    <Tag color={status.color}>{status.text}</Tag>
+                  </Descriptions.Item>
+                  <Descriptions.Item label="所属机柜">
+                    {cabinet
+                      ? `${cabinet.name} (${cabinet.code})`
+                      : text(device.cabinetId)}
+                  </Descriptions.Item>
+                  <Descriptions.Item label="U位">
+                    U{device.startU}
+                    {device.startU !== device.endU ? `-U${device.endU}` : ''}
+                  </Descriptions.Item>
+                  <Descriptions.Item label="管理IP">
+                    {text(device.managementIp)}
+                  </Descriptions.Item>
+                  <Descriptions.Item label="序列号">
+                    {text(device.serialNumber)}
+                  </Descriptions.Item>
+                  <Descriptions.Item label="供应商">
+                    {text(device.vendor)}
+                  </Descriptions.Item>
+                  <Descriptions.Item label="负责人">
+                    {text(device.owner)}
+                  </Descriptions.Item>
+                  <Descriptions.Item label="所属部门">
+                    {text(device.department)}
+                  </Descriptions.Item>
+                  <Descriptions.Item label="是否已上架">
+                    {booleanText(device.isMounted)}
+                  </Descriptions.Item>
+                  <Descriptions.Item label="采购日期">
+                    {text(device.purchaseDate)}
+                  </Descriptions.Item>
+                  <Descriptions.Item label="质保到期">
+                    {text(device.warrantyExpiry)}
+                  </Descriptions.Item>
+                  <Descriptions.Item label="描述">
+                    {text(device.description)}
+                  </Descriptions.Item>
+                  <Descriptions.Item label="创建时间">
+                    {text(device.createdAt)}
+                  </Descriptions.Item>
+                  <Descriptions.Item label="更新时间">
+                    {text(device.updatedAt)}
+                  </Descriptions.Item>
+                </Descriptions>
 
-      <div className={styles.sectionTitle}>模板信息</div>
-      <Descriptions column={1} bordered size="small">
-        <Descriptions.Item label="模板名称">
-          {text(template?.name)}
-        </Descriptions.Item>
-        <Descriptions.Item label="设备类型">
-          {text(template?.category)}
-        </Descriptions.Item>
-        <Descriptions.Item label="品牌">{text(template?.brand)}</Descriptions.Item>
-        <Descriptions.Item label="型号">{text(template?.model)}</Descriptions.Item>
-        <Descriptions.Item label="高度">
-          {template?.uHeight ? `${template.uHeight}U` : '-'}
-        </Descriptions.Item>
-        <Descriptions.Item label="最大功率">
-          {template?.maxPower ? `${template.maxPower}W` : '-'}
-        </Descriptions.Item>
-      </Descriptions>
+                <div className={styles.sectionTitle}>模板信息</div>
+                <Descriptions column={1} bordered size="small">
+                  <Descriptions.Item label="模板名称">
+                    {text(template?.name)}
+                  </Descriptions.Item>
+                  <Descriptions.Item label="设备类型">
+                    {text(template?.category)}
+                  </Descriptions.Item>
+                  <Descriptions.Item label="品牌">
+                    {text(template?.brand)}
+                  </Descriptions.Item>
+                  <Descriptions.Item label="型号">
+                    {text(template?.model)}
+                  </Descriptions.Item>
+                  <Descriptions.Item label="高度">
+                    {template?.uHeight ? `${template.uHeight}U` : '-'}
+                  </Descriptions.Item>
+                  <Descriptions.Item label="最大功率">
+                    {template?.maxPower ? `${template.maxPower}W` : '-'}
+                  </Descriptions.Item>
+                </Descriptions>
+              </>
+            ),
+          },
+          {
+            key: 'ports',
+            label: '端口信息',
+            children: (
+              <DevicePortViewContent
+                key={device.id}
+                device={device}
+                template={template}
+              />
+            ),
+          },
+        ]}
+      />
     </Card>
   );
 };
