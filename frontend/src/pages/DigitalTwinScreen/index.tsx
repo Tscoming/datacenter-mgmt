@@ -1,5 +1,9 @@
 import { Area, Line } from '@ant-design/charts';
-import { Canvas } from '@react-three/fiber';
+import {
+  Canvas,
+  events as createPointerEvents,
+  type ComputeFunction,
+} from '@react-three/fiber';
 import { history } from '@umijs/max';
 import { Button, Select, Switch } from 'antd';
 import {
@@ -45,6 +49,23 @@ import styles from './index.less';
 type ScreenDatacenterOption = { id: string; name: string; code: string };
 type ScreenConnectionType = { value: string; label: string; color: string };
 type CabinetTelemetryStateMap = Record<string, CabinetTelemetrySourceState>;
+
+const computeScenePointer: ComputeFunction = (event, state) => {
+  const rect = state.gl.domElement.getBoundingClientRect();
+  const clientX = 'clientX' in event ? event.clientX : 0;
+  const clientY = 'clientY' in event ? event.clientY : 0;
+
+  state.pointer.set(
+    ((clientX - rect.left) / rect.width) * 2 - 1,
+    -((clientY - rect.top) / rect.height) * 2 + 1,
+  );
+  state.raycaster.setFromCamera(state.pointer, state.camera);
+};
+
+const createScenePointerEvents: typeof createPointerEvents = (store) => ({
+  ...createPointerEvents(store),
+  compute: computeScenePointer,
+});
 
 const chartTheme = {
   styleSheet: {
@@ -783,6 +804,7 @@ const DigitalTwinScreen: React.FC = () => {
           <Canvas
             shadows
             dpr={[1, 2]}
+            events={createScenePointerEvents}
             className={styles.sceneCanvas}
             onContextMenu={(event) => event.preventDefault()}
           >

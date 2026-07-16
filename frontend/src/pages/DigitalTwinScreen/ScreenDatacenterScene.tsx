@@ -868,18 +868,38 @@ const ScreenCabinet3D: React.FC<{
       <mesh position={[0, 0, depth / 2 + 0.018]}>
         <boxGeometry args={[width - 0.09, height - 0.14, 0.035]} />
         <meshPhysicalMaterial
-          color="#8aefff"
+          color={hovered || selected ? '#c9fbff' : '#8aefff'}
           transparent
-          opacity={0.26}
+          opacity={hovered || selected ? 0.38 : 0.26}
           metalness={0.2}
           roughness={0.08}
           transmission={0.2}
-          emissive="#00c8df"
-          emissiveIntensity={0.08}
+          emissive={hovered || selected ? '#34f0ff' : '#00c8df'}
+          emissiveIntensity={hovered || selected ? 0.28 : 0.08}
         />
       </mesh>
 
-      <CabinetGlow color={color} width={width} height={height} depth={depth} />
+      <CabinetGlow
+        color={hovered || selected ? '#34f0ff' : color}
+        width={width}
+        height={height}
+        depth={depth}
+      />
+
+      {(hovered || selected) && (
+        <lineSegments raycast={disableRaycast} renderOrder={6}>
+          <edgesGeometry
+            args={[new THREE.BoxGeometry(width + 0.07, height + 0.07, depth + 0.07)]}
+          />
+          <lineBasicMaterial
+            color="#7df9ff"
+            transparent
+            opacity={0.98}
+            depthTest={false}
+            toneMapped={false}
+          />
+        </lineSegments>
+      )}
 
       <group position={[0, 0, depth / 2 + 0.05]}>
         {slotRows.map(({ u, device, isDeviceStart }, index) => {
@@ -900,6 +920,7 @@ const ScreenCabinet3D: React.FC<{
             : '#071b27';
           const emissiveColor = occupied ? '#0b6b78' : '#00131c';
           const slotWidth = occupied ? width - 0.16 : width - 0.22;
+          const highlightedSlotColor = occupied ? '#7ad9e3' : '#125f70';
         return (
           <group key={`${cabinet.id}-u-${u}`} position={[0, y, 0]}>
             <mesh>
@@ -911,9 +932,9 @@ const ScreenCabinet3D: React.FC<{
                 ]}
               />
               <meshStandardMaterial
-                color={slotColor}
-                emissive={emissiveColor}
-                emissiveIntensity={occupied ? 0.1 : 0.03}
+                color={hovered || selected ? highlightedSlotColor : slotColor}
+                emissive={hovered || selected ? '#19d9ea' : emissiveColor}
+                emissiveIntensity={hovered || selected ? 0.75 : occupied ? 0.1 : 0.03}
                 metalness={occupied ? 0.35 : 0.12}
                 roughness={occupied ? 0.48 : 0.82}
               />
