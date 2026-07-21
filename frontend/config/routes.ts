@@ -33,6 +33,7 @@ export default [
     name: 'datacenter3d',
     icon: 'appstore',
     component: './Datacenter3D',
+    hideInMenu: true,
   },
   {
     path: '/digital-twin-screen',
