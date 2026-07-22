@@ -83,7 +83,7 @@ describe('Login Page', () => {
     );
 
     act(() => {
-      fireEvent.change(passwordInput, { target: { value: 'ant.design' } });
+      fireEvent.change(passwordInput, { target: { value: 'password' } });
     });
 
     await (await rootContainer.findByText('Login')).click();

@@ -101,7 +101,7 @@ export namespace API {
   export type POST_API_LOGIN_ACCOUNT_PAYLOAD = {
     /** example: admin */
     username: string;
-    /** example: ant.design */
+    /** example: password */
     password: string;
     /** example: true */
     autoLogin: boolean;

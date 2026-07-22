@@ -108,8 +108,8 @@ export const ensureUserTable = async (req: Request, schema: string) => {
     `,
   );
 
-  const adminPassword = createPasswordFields('ant.design');
-  const userPassword = createPasswordFields('ant.design');
+  const adminPassword = createPasswordFields('password');
+  const userPassword = createPasswordFields('password');
   await queryDatabase(
     req,
     'user.seed',

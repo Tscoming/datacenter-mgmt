@@ -86,7 +86,7 @@ let users: ManagedUser[] = [
   createSeedUser(
     'u_admin',
     'admin',
-    'ant.design',
+    'password',
     'admin',
     '系统管理员',
     'admin@datacenter.local',
@@ -94,7 +94,7 @@ let users: ManagedUser[] = [
   createSeedUser(
     'u_user',
     'user',
-    'ant.design',
+    'password',
     'user',
     '普通用户',
     'user@datacenter.local',
