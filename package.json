@@ -6,6 +6,7 @@
     "dev": "node scripts/dev.js",
     "dev:backend": "npm run --workspace backend dev",
     "dev:frontend": "npm run --workspace frontend start:dev",
+    "refresh:demo-data": "node scripts/refresh-demo-data.js",
     "build": "npm run --workspace frontend build && npm run --workspace backend build",
     "test": "npm run --workspace frontend test",
     "tsc": "npm run --workspace frontend tsc && npm run --workspace backend tsc"

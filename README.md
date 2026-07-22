@@ -75,12 +75,16 @@ PostgreSQL，请在启动容器时通过 `--env-file` 或 `-e` 传入 `.env.exam
 ```bash
 cp .env.production.example .env.production
 # 编辑 .env.production，将 POSTGRES_PASSWORD 替换为高强度随机密码
+mkdir -p data
 docker compose --env-file .env.production up -d --build
 docker compose --env-file .env.production ps
 ```
 
 Compose 默认只发布应用的 `8008` 端口，PostgreSQL 仅连接到内部 Docker 网络，
-数据保存在命名卷 `datacenter-mgmt_postgres-data`。数据库首次创建时会自动执行
+命名卷 `datacenter-mgmt_postgres-data` 通过 local bind 保存到 Compose 启动目录的
+`./data`。Compose 使用 PostgreSQL 18，其默认数据目录为容器内
+`/var/lib/postgresql/18/docker`，因此宿主机上的实际数据库文件位于 `./data/18/docker`。
+数据库首次创建时会自动执行
 `design/data-model/generated-mock-migration.sql`；已有数据卷不会重复执行初始化脚本。
 应用存活检查为 `/health`，包含数据库连通性的就绪检查为 `/ready`。
 
@@ -97,6 +101,24 @@ docker compose --env-file .env.production down
 docker compose --env-file .env.production exec -T postgres \
   sh -c 'pg_dump -U "$POSTGRES_USER" "$POSTGRES_DB"' > datacenter-mgmt-backup.sql
 ```
+
+### 刷新初始化 demo 数据
+
+开发测试产生了需要带到新环境的数据后，可以从当前使用的数据库重新生成初始化 SQL。
+脚本读取项目根目录 `.env` 中的 `PGHOST`、`PGPORT`、`PGDATABASE`、`PGUSER`、
+`PGPASSWORD` 和 `PGSCHEMA`，仅导出 `PGSCHEMA` 指定 schema 的表结构和数据。
+
+脚本会优先使用本机 `PATH` 中的 `pg_dump`；如果未安装 PostgreSQL Client Tools，则自动通过
+Docker 的 `postgres:18-alpine` 镜像执行导出，以匹配当前开发数据库的 PostgreSQL 18：
+
+```bash
+npm run refresh:demo-data
+```
+
+脚本会先写入临时文件。只有 `pg_dump` 成功且导出内容通过校验后，才会替换
+`design/data-model/generated-mock-migration.sql`；失败时保留原文件。生成后应检查 Git diff，
+确认其中不包含不应提交的敏感或临时测试数据。新的初始化 SQL 只会在 PostgreSQL 数据目录
+为空时由容器自动执行。
 
 ## 本地启动
 

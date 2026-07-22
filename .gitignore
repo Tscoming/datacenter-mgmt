@@ -8,3 +8,4 @@ backend/.env
 frontend/dist
 frontend/src/.umi
 simulate/node-red/Modbus/node-red-rack-modbus-*-*.json
+/data/
