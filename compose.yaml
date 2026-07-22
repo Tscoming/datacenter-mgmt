@@ -66,6 +66,7 @@ services:
     networks:
       - frontend
       - backend
+      - telemetry
     logging:
       driver: json-file
       options:
@@ -74,6 +75,9 @@ services:
 
 networks:
   frontend:
+  telemetry:
+    external: true
+    name: iot-telemetry
   backend:
     internal: true
 

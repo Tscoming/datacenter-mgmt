@@ -11,9 +11,9 @@ services:
       - TZ=Asia/Shanghai
     ports:
       - "1880:1880"
-      - "1502-1510:1502-1510"
     networks:
       - node-red-net
+      - telemetry
     volumes:
       - node-red-data:/data
 
@@ -22,3 +22,6 @@ volumes:
 
 networks:
   node-red-net:
+  telemetry:
+    external: true
+    name: iot-telemetry
