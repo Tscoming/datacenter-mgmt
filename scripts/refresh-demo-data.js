@@ -10,6 +10,7 @@ const outputFile = path.join(
   'generated-mock-migration.sql',
 );
 const envFile = path.join(projectRoot, '.env');
+const targetSchemaPlaceholder = '__DCIM_TARGET_SCHEMA__';
 
 main();
 
@@ -19,7 +20,7 @@ function main() {
 
   try {
     const databaseEnv = loadDatabaseEnv();
-    const schema = databaseEnv.PGSCHEMA;
+    const sourceSchema = databaseEnv.PGSCHEMA;
     const dumpArgs = [
       '--host',
       databaseEnv.PGHOST,
@@ -30,7 +31,7 @@ function main() {
       '--dbname',
       databaseEnv.PGDATABASE,
       '--schema',
-      schema,
+      sourceSchema,
       '--clean',
       '--if-exists',
       '--no-owner',
@@ -63,10 +64,12 @@ function main() {
       throw new Error(`pg_dump exited with code ${result.status}`);
     }
 
-    validateDump(temporaryFile, schema);
+    validateDump(temporaryFile, sourceSchema);
+    rewriteDumpSchema(temporaryFile, sourceSchema, targetSchemaPlaceholder);
+    validateDump(temporaryFile, targetSchemaPlaceholder);
     fs.renameSync(temporaryFile, outputFile);
     console.log(
-      `Refreshed ${path.relative(projectRoot, outputFile)} from ${databaseEnv.PGDATABASE}.${schema}`,
+      `Refreshed ${path.relative(projectRoot, outputFile)} from ${databaseEnv.PGDATABASE}.${sourceSchema}; the target schema will be selected during Docker Compose initialization`,
     );
   } catch (error) {
     console.error(`Failed to refresh demo data: ${error.message}`);
@@ -163,9 +166,66 @@ function parseEnvLine(line) {
   return key ? { key, value } : null;
 }
 
+function rewriteDumpSchema(file, sourceSchema, targetSchema) {
+  assertSchemaName(sourceSchema, 'PGSCHEMA');
+
+  const sourceIdentifiers = [sourceSchema, quoteIdentifier(sourceSchema)];
+  const targetIdentifier = quoteIdentifier(targetSchema);
+  let inCopyData = false;
+  const sql = fs
+    .readFileSync(file, 'utf8')
+    .split(/(?<=\n)/)
+    .map((line) => {
+      if (inCopyData) {
+        if (line.trim() === '\\.') {
+          inCopyData = false;
+        }
+        return line;
+      }
+
+      let rewrittenLine = line;
+      for (const sourceIdentifier of sourceIdentifiers) {
+        rewrittenLine = rewrittenLine.replaceAll(
+          `${sourceIdentifier}.`,
+          `${targetIdentifier}.`,
+        );
+        rewrittenLine = rewrittenLine.replaceAll(
+          `SCHEMA ${sourceIdentifier};`,
+          `SCHEMA ${targetIdentifier};`,
+        );
+        rewrittenLine = rewrittenLine.replaceAll(
+          `SCHEMA IF EXISTS ${sourceIdentifier};`,
+          `SCHEMA IF EXISTS ${targetIdentifier};`,
+        );
+      }
+      if (/^COPY .+ FROM stdin;\r?\n?$/.test(rewrittenLine)) {
+        inCopyData = true;
+      }
+      return rewrittenLine;
+    })
+    .join('');
+
+  fs.writeFileSync(file, `${sql.trimEnd()}\n`);
+}
+
+function assertSchemaName(schema, envKey) {
+  if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(schema)) {
+    throw new Error(`Invalid ${envKey}: ${schema}`);
+  }
+}
+
+function quoteIdentifier(identifier) {
+  return `"${identifier.replaceAll('"', '""')}"`;
+}
+
 function validateDump(file, schema) {
   const sql = fs.readFileSync(file, 'utf8');
-  if (!sql.includes('CREATE SCHEMA') || !sql.includes(schema) || !sql.includes('COPY ')) {
+  const identifiers = [schema, quoteIdentifier(schema)];
+  const hasSchema = identifiers.some((identifier) =>
+    sql.includes(`CREATE SCHEMA ${identifier};`),
+  );
+  const hasCopy = identifiers.some((identifier) => sql.includes(`COPY ${identifier}.`));
+  if (!hasSchema || !hasCopy) {
     throw new Error('pg_dump output is incomplete; the existing demo SQL was not changed');
   }
 }
