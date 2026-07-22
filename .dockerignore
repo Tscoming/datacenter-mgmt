@@ -3,6 +3,7 @@
 .codex
 .env
 **/.env
+.env.production
 **/node_modules
 **/dist
 frontend/screenshots

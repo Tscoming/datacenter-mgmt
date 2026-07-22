@@ -70,6 +70,34 @@ docker run --rm -p 8008:8008 --name datacenter-mgmt datacenter-mgmt:latest
 PostgreSQL，请在启动容器时通过 `--env-file` 或 `-e` 传入 `.env.example` 中的
 `API_DATA_SOURCE=database` 及 `PG*` 配置。不要将本地 `.env` 打包进镜像。
 
+生产环境建议使用 Compose 同时运行应用和 PostgreSQL：
+
+```bash
+cp .env.production.example .env.production
+# 编辑 .env.production，将 POSTGRES_PASSWORD 替换为高强度随机密码
+docker compose --env-file .env.production up -d --build
+docker compose --env-file .env.production ps
+```
+
+Compose 默认只发布应用的 `8008` 端口，PostgreSQL 仅连接到内部 Docker 网络，
+数据保存在命名卷 `datacenter-mgmt_postgres-data`。数据库首次创建时会自动执行
+`design/data-model/generated-mock-migration.sql`；已有数据卷不会重复执行初始化脚本。
+应用存活检查为 `/health`，包含数据库连通性的就绪检查为 `/ready`。
+
+查看日志和停止服务：
+
+```bash
+docker compose --env-file .env.production logs -f app postgres
+docker compose --env-file .env.production down
+```
+
+`down` 不会删除数据库卷。生产部署应定期备份 PostgreSQL，例如：
+
+```bash
+docker compose --env-file .env.production exec -T postgres \
+  sh -c 'pg_dump -U "$POSTGRES_USER" "$POSTGRES_DB"' > datacenter-mgmt-backup.sql
+```
+
 ## 本地启动
 
 同时启动前后端：

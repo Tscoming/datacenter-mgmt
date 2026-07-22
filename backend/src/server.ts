@@ -1,6 +1,7 @@
 import express from 'express';
 import fs from 'node:fs';
 import path from 'node:path';
+import { getApiDataSource, getDatabaseSchema, getPool } from './db';
 import { loadEnv } from './env';
 import { loadMockRouteModules } from './mockRoutes';
 import { requestLogger } from './requestLogger';
@@ -36,6 +37,25 @@ app.use((req, res, next) => {
 
 app.get('/health', (_req, res) => {
   res.json({ success: true, service: 'datacenter-mgmt-backend' });
+});
+
+app.get('/ready', async (_req, res) => {
+  try {
+    if (getApiDataSource() === 'database') {
+      const schema = getDatabaseSchema();
+      const result = await getPool().query<{ relation: string | null }>(
+        'select to_regclass($1) as relation',
+        [`${schema}.datacenter`],
+      );
+      if (!result.rows[0]?.relation) {
+        throw new Error(`Database schema is not initialized: ${schema}`);
+      }
+    }
+    res.json({ success: true, service: 'datacenter-mgmt-backend' });
+  } catch (error) {
+    console.error('[ready] Database readiness check failed:', error);
+    res.status(503).json({ success: false, errorMessage: 'Database is unavailable' });
+  }
 });
 
 const routeCount = registerMockRoutes(app, loadMockRouteModules());

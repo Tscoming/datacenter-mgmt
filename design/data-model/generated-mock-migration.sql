@@ -244,7 +244,6 @@ create table cable_connection (
   updated_at timestamptz not null,
   check (source_port_id <> target_port_id)
 );
-+
 
 create or replace function enforce_cable_connection_port_occupancy()
 returns trigger

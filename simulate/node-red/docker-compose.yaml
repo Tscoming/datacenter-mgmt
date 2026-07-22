@@ -1,0 +1,24 @@
+################################################################################
+# Node-RED Stack or Compose
+################################################################################
+# docker stack deploy node-red --compose-file docker-compose-node-red.yml
+# docker-compose -f docker-compose-node-red.yml -p myNoderedProject up
+################################################################################
+services:
+  node-red:
+    image: nodered/node-red:latest
+    environment:
+      - TZ=Asia/Shanghai
+    ports:
+      - "1880:1880"
+      - "1502-1510:1502-1510"
+    networks:
+      - node-red-net
+    volumes:
+      - node-red-data:/data
+
+volumes:
+  node-red-data:
+
+networks:
+  node-red-net:
