@@ -1,0 +1,11 @@
+.git
+.agents
+.codex
+.env
+**/.env
+**/node_modules
+**/dist
+frontend/screenshots
+frontend/*.log
+outputs
+simulate

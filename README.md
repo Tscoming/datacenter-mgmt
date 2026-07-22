@@ -51,6 +51,25 @@ IDC 数据中心管理系统，采用前后端分离的 workspace 结构。`fron
 pnpm install
 ```
 
+## Docker 部署
+
+构建生产镜像：
+
+```bash
+docker build -t datacenter-mgmt:latest .
+```
+
+使用内置 mock 数据启动：
+
+```bash
+docker run --rm -p 8008:8008 --name datacenter-mgmt datacenter-mgmt:latest
+```
+
+浏览器访问 `http://localhost:8008`，健康检查地址为
+`http://localhost:8008/health`。镜像默认使用 `API_DATA_SOURCE=mock`；如需连接
+PostgreSQL，请在启动容器时通过 `--env-file` 或 `-e` 传入 `.env.example` 中的
+`API_DATA_SOURCE=database` 及 `PG*` 配置。不要将本地 `.env` 打包进镜像。
+
 ## 本地启动
 
 同时启动前后端：

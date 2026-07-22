@@ -1,4 +1,6 @@
 import express from 'express';
+import fs from 'node:fs';
+import path from 'node:path';
 import { loadEnv } from './env';
 import { loadMockRouteModules } from './mockRoutes';
 import { requestLogger } from './requestLogger';
@@ -41,6 +43,19 @@ void startCabinetTelemetryService().catch((error) => {
   console.error('[telemetry] Failed to start cabinet telemetry service:', error);
 });
 
+const frontendDist = path.resolve(process.env.FRONTEND_DIST || 'frontend/dist');
+if (fs.existsSync(frontendDist)) {
+  app.use(express.static(frontendDist));
+  app.get('*', (req, res, next) => {
+    if (req.path.startsWith('/api/') || !req.accepts('html')) {
+      next();
+      return;
+    }
+
+    res.sendFile(path.join(frontendDist, 'index.html'));
+  });
+}
+
 app.use((req, res) => {
   res.status(404).json({
     success: false,
@@ -51,6 +66,9 @@ app.use((req, res) => {
 const server = app.listen(port, host, () => {
   console.log(`Backend API listening on http://${host}:${port}`);
   console.log(`Registered ${routeCount} API routes`);
+  if (fs.existsSync(frontendDist)) {
+    console.log(`Serving frontend from ${frontendDist}`);
+  }
 });
 
 server.on('error', (error: NodeJS.ErrnoException) => {

@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "node --watch --watch-path=src --watch-path=mock -r ts-node/register/transpile-only src/server.ts",
-    "build": "tsc -p tsconfig.json",
+    "build": "tsc -p tsconfig.json && tsc -p tsconfig.mock.json",
     "start": "ts-node --transpile-only src/server.ts",
     "tsc": "tsc --noEmit -p tsconfig.json"
   },
