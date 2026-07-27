@@ -4,9 +4,11 @@ packages:
 allowBuilds:
   core-js: false
   core-js-pure: false
+  cpu-features: false
   es5-ext: false
   esbuild: true
   puppeteer-core: false
+  ssh2: false
   unrs-resolver: true
 minimumReleaseAgeExclude:
   - hono@4.12.27

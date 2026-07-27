@@ -1,5 +1,48 @@
 import { request } from '@umijs/max';
 
+export type DeviceSshBinding = {
+    deviceId: string;
+    keyId: string;
+    keyLabel: string;
+    keyType: string;
+    username: string;
+    port: number;
+    updatedAt: string;
+};
+
+export type DeviceSshConnectionPayload = {
+    keyId?: string;
+    username?: string;
+    port?: number;
+    passphrase?: string;
+};
+
+export type DeviceSshTestResult = {
+    connected: boolean;
+    stage: 'network' | 'handshake' | 'authentication' | 'ready';
+    host: string;
+    port: number;
+    username: string;
+    keyLabel: string;
+    keyType: string;
+    elapsedMs: number;
+    testedAt: string;
+    serverFingerprint?: string;
+    algorithms?: {
+        kex?: string;
+        serverHostKey?: string;
+        cipherClientToServer?: string;
+        cipherServerToClient?: string;
+    };
+    banner?: string;
+    errorCode?: string;
+    errorMessage?: string;
+};
+
+const keyManagementOptions = (verificationToken: string) => ({
+    headers: { 'X-Key-Management-Token': verificationToken },
+});
+
 /** 获取设备列表 */
 export async function getDevices(
     params?: IDC.PageParams & {
@@ -98,6 +141,49 @@ export async function validateDeviceMount(data: IDC.DeviceMountValidationRequest
         {
             method: 'POST',
             data,
+        },
+    );
+}
+
+export async function getDeviceSshBinding(
+    id: string,
+    verificationToken: string,
+) {
+    return request<IDC.ApiResponse<DeviceSshBinding | null>>(
+        `/api/idc/devices/${id}/ssh-binding`,
+        {
+            method: 'GET',
+            ...keyManagementOptions(verificationToken),
+        },
+    );
+}
+
+export async function updateDeviceSshBinding(
+    id: string,
+    data: DeviceSshConnectionPayload,
+    verificationToken: string,
+) {
+    return request<IDC.ApiResponse<DeviceSshBinding | null>>(
+        `/api/idc/devices/${id}/ssh-binding`,
+        {
+            method: 'PUT',
+            data,
+            ...keyManagementOptions(verificationToken),
+        },
+    );
+}
+
+export async function testDeviceSsh(
+    id: string,
+    data: DeviceSshConnectionPayload,
+    verificationToken: string,
+) {
+    return request<IDC.ApiResponse<DeviceSshTestResult>>(
+        `/api/idc/devices/${id}/test-ssh`,
+        {
+            method: 'POST',
+            data,
+            ...keyManagementOptions(verificationToken),
         },
     );
 }

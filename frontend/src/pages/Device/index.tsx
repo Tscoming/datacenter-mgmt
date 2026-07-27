@@ -8,18 +8,25 @@ import {
   ProFormTextArea,
   ProTable,
 } from '@ant-design/pro-components';
+import { useAccess } from '@umijs/max';
 import {
   Alert,
   Badge,
   Button,
   Descriptions,
   Drawer,
+  Form,
   Input,
+  InputNumber,
+  Modal,
   message,
   Popconfirm,
+  Select,
   Space,
+  Tabs,
   Tag,
   Tooltip,
+  Typography,
 } from 'antd';
 import {
   AlertTriangle,
@@ -28,9 +35,11 @@ import {
   Edit3,
   Eye,
   Network,
+  PlugZap,
   Plus,
   Server,
   Settings,
+  ShieldCheck,
   Trash2,
   Wifi,
   WifiOff,
@@ -40,13 +49,23 @@ import DevicePortView from '@/components/DevicePortView';
 import { getCabinets, getCabinetUUsage } from '@/services/idc/cabinet';
 import {
   createDevice,
+  type DeviceSshBinding,
+  type DeviceSshTestResult,
   deleteDevice,
+  getDeviceSshBinding,
   getDevices,
+  testDeviceSsh,
   unmountDevice,
   updateDevice,
+  updateDeviceSshBinding,
   validateDeviceMount,
 } from '@/services/idc/device';
 import { getAllDeviceTemplates } from '@/services/idc/deviceTemplate';
+import {
+  getManagedKeys,
+  type ManagedKey,
+  verifyKeyManagement,
+} from '@/services/system/keyManagement';
 
 const statusConfig: Record<
   string,
@@ -65,6 +84,13 @@ const statusConfig: Record<
     text: '维护中',
     icon: <Settings size={14} />,
   },
+};
+
+const sshStageText: Record<DeviceSshTestResult['stage'], string> = {
+  network: '网络连接',
+  handshake: 'SSH 握手',
+  authentication: '密钥认证',
+  ready: '连接就绪',
 };
 
 // U位可视化选择组件
@@ -219,6 +245,7 @@ const USlotSelector: React.FC<{
 };
 
 const DevicePage: React.FC = () => {
+  const access = useAccess();
   const actionRef = useRef<ActionType>(null);
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [editModalOpen, setEditModalOpen] = useState(false);
@@ -245,6 +272,20 @@ const DevicePage: React.FC = () => {
     { u: number; occupied: boolean; deviceName?: string }[]
   >([]);
   const [editCabinetSlotsLoading, setEditCabinetSlotsLoading] = useState(false);
+  const [sshVerificationOpen, setSshVerificationOpen] = useState(false);
+  const [sshVerificationLoading, setSshVerificationLoading] = useState(false);
+  const [sshVerificationPassword, setSshVerificationPassword] = useState('');
+  const [sshVerificationToken, setSshVerificationToken] = useState('');
+  const [sshKeys, setSshKeys] = useState<ManagedKey[]>([]);
+  const [sshBinding, setSshBinding] = useState<DeviceSshBinding | null>(null);
+  const [sshKeyId, setSshKeyId] = useState<string>();
+  const [sshUsername, setSshUsername] = useState('root');
+  const [sshPort, setSshPort] = useState(22);
+  const [sshPassphrase, setSshPassphrase] = useState('');
+  const [sshTestLoading, setSshTestLoading] = useState(false);
+  const [sshTestResult, setSshTestResult] =
+    useState<DeviceSshTestResult | null>(null);
+  const [editActiveTab, setEditActiveTab] = useState('basic');
 
   // 端口详情视图状态
   const [portViewOpen, setPortViewOpen] = useState(false);
@@ -525,9 +566,88 @@ const DevicePage: React.FC = () => {
   };
 
   const resetEditForm = (record?: IDC.Device) => {
+    setEditActiveTab('basic');
     setEditSelectedCabinetId(record?.cabinetId);
     setEditSelectedStartU(record?.startU);
     setEditCabinetSlots([]);
+    setSshVerificationOpen(false);
+    setSshVerificationPassword('');
+    setSshVerificationToken('');
+    setSshKeys([]);
+    setSshBinding(null);
+    setSshKeyId(undefined);
+    setSshUsername('root');
+    setSshPort(22);
+    setSshPassphrase('');
+    setSshTestResult(null);
+  };
+
+  const verifyAndLoadSshBinding = async () => {
+    if (!currentRow || !sshVerificationPassword) {
+      message.warning('请输入当前管理员账户密码');
+      return;
+    }
+    setSshVerificationLoading(true);
+    try {
+      const verified = await verifyKeyManagement(sshVerificationPassword);
+      const token = verified.data.verificationToken;
+      const [keysResponse, bindingResponse] = await Promise.all([
+        getManagedKeys(token),
+        getDeviceSshBinding(currentRow.id, token),
+      ]);
+      setSshVerificationToken(token);
+      setSshKeys(keysResponse.data || []);
+      setSshBinding(bindingResponse.data || null);
+      setSshTestResult(null);
+      if (bindingResponse.data) {
+        setSshKeyId(bindingResponse.data.keyId);
+        setSshUsername(bindingResponse.data.username);
+        setSshPort(bindingResponse.data.port);
+      } else {
+        setSshKeyId(undefined);
+        setSshUsername('root');
+        setSshPort(22);
+      }
+      setSshVerificationPassword('');
+      setSshVerificationOpen(false);
+    } finally {
+      setSshVerificationLoading(false);
+    }
+  };
+
+  const sshBindingUnchanged =
+    !!sshBinding &&
+    sshKeyId === sshBinding.keyId &&
+    sshUsername.trim() === sshBinding.username &&
+    sshPort === sshBinding.port;
+
+  const runSshConnectionTest = async () => {
+    if (!currentRow || !sshVerificationToken) return;
+    if (!sshKeyId) {
+      message.warning('请先选择密钥');
+      return;
+    }
+    if (!sshUsername.trim()) {
+      message.warning('请输入 SSH 用户名');
+      return;
+    }
+    setSshTestLoading(true);
+    setSshTestResult(null);
+    try {
+      const response = await testDeviceSsh(
+        currentRow.id,
+        {
+          keyId: sshKeyId,
+          username: sshUsername.trim(),
+          port: sshPort,
+          passphrase: sshPassphrase || undefined,
+        },
+        sshVerificationToken,
+      );
+      setSshTestResult(response.data || null);
+    } finally {
+      setSshTestLoading(false);
+    }
   };
 
   const columns: ProColumns<IDC.Device>[] = [
@@ -1038,18 +1158,33 @@ const DevicePage: React.FC = () => {
         key={currentRow?.id}
         width={800}
         initialValues={currentRow}
+        onFinishFailed={() => setEditActiveTab('basic')}
         onFinish={async (values) => {
           if (!currentRow) return false;
           if (editCabinetSlotsLoading) {
+            setEditActiveTab('basic');
             message.warning('正在加载U位信息，请稍后');
             return false;
           }
           if (!editSelectedCabinetId || !editSelectedStartU) {
+            setEditActiveTab('basic');
             message.error('请选择目标机柜和起始U位');
             return false;
           }
           if (editValidationSummary?.errors.length) {
+            setEditActiveTab('basic');
             message.error('容量校验未通过，请调整上架位置或目标机柜');
+            return false;
+          }
+          if (
+            access.canAdmin &&
+            sshVerificationToken &&
+            sshKeyId &&
+            !sshBindingUnchanged &&
+            !sshTestResult?.connected
+          ) {
+            setEditActiveTab('ssh');
+            message.error('新的 SSH 绑定必须先通过连接测试');
             return false;
           }
           const res = await updateDevice(currentRow.id, {
@@ -1059,6 +1194,18 @@ const DevicePage: React.FC = () => {
             endU: editSelectedStartU + editDeviceUHeight - 1,
           });
           if (res.success) {
+            if (access.canAdmin && sshVerificationToken) {
+              const bindingResponse = await updateDeviceSshBinding(
+                currentRow.id,
+                {
+                  keyId: sshKeyId,
+                  username: sshUsername.trim(),
+                  port: sshPort,
+                },
+                sshVerificationToken,
+              );
+              setSshBinding(bindingResponse.data || null);
+            }
             message.success('更新成功');
             actionRef.current?.reload();
             return true;
@@ -1066,120 +1213,318 @@ const DevicePage: React.FC = () => {
           return false;
         }}
       >
-        <ProFormText
-          name="name"
-          label="设备名称"
-          rules={[{ required: true }]}
+        <Tabs
+          activeKey={editActiveTab}
+          onChange={setEditActiveTab}
+          items={[
+            { key: 'basic', label: '基本信息' },
+            ...(access.canAdmin ? [{ key: 'ssh', label: 'SSH 密钥' }] : []),
+          ]}
         />
-        <ProFormText
-          name="assetCode"
-          label="资产编码"
-          rules={[{ required: true }]}
-        />
-        <ProFormSelect
-          name="cabinetId"
-          label="所在机柜"
-          options={cabinets.map((c) => ({
-            value: c.id,
-            label: `${c.name} (${c.code}) - 剩余${(c.uHeight || 42) - (c.usedU || 0)}U`,
-          }))}
-          showSearch
-          rules={[{ required: true, message: '请选择所在机柜' }]}
-          fieldProps={{
-            onChange: (value: string) => {
-              setEditSelectedCabinetId(value);
-              setEditSelectedStartU(undefined);
-            },
-          }}
-        />
-        {editSelectedCabinetId && currentRow && (
-          <div style={{ marginBottom: 24 }}>
-            <div style={{ marginBottom: 8, fontWeight: 500 }}>
-              选择起始U位 <span style={{ color: '#f5222d' }}>*</span>
+        <div style={{ display: editActiveTab === 'basic' ? 'block' : 'none' }}>
+          <ProFormText
+            name="name"
+            label="设备名称"
+            rules={[{ required: true }]}
+          />
+          <ProFormText
+            name="assetCode"
+            label="资产编码"
+            rules={[{ required: true }]}
+          />
+          <ProFormSelect
+            name="cabinetId"
+            label="所在机柜"
+            options={cabinets.map((c) => ({
+              value: c.id,
+              label: `${c.name} (${c.code}) - 剩余${(c.uHeight || 42) - (c.usedU || 0)}U`,
+            }))}
+            showSearch
+            rules={[{ required: true, message: '请选择所在机柜' }]}
+            fieldProps={{
+              onChange: (value: string) => {
+                setEditSelectedCabinetId(value);
+                setEditSelectedStartU(undefined);
+              },
+            }}
+          />
+          {editSelectedCabinetId && currentRow && (
+            <div style={{ marginBottom: 24 }}>
+              <div style={{ marginBottom: 8, fontWeight: 500 }}>
+                选择起始U位 <span style={{ color: '#f5222d' }}>*</span>
+              </div>
+              <USlotSelector
+                cabinetId={editSelectedCabinetId}
+                uHeight={editSelectedCabinet?.uHeight || 42}
+                deviceUHeight={editDeviceUHeight}
+                selectedStartU={editSelectedStartU}
+                onSelect={setEditSelectedStartU}
+                uUsage={editCabinetSlots}
+                loading={editCabinetSlotsLoading}
+              />
             </div>
-            <USlotSelector
-              cabinetId={editSelectedCabinetId}
-              uHeight={editSelectedCabinet?.uHeight || 42}
-              deviceUHeight={editDeviceUHeight}
-              selectedStartU={editSelectedStartU}
-              onSelect={setEditSelectedStartU}
-              uUsage={editCabinetSlots}
-              loading={editCabinetSlotsLoading}
-            />
-          </div>
-        )}
-        {editSelectedCabinetId && (
-          <div style={{ marginBottom: 24 }}>
-            <div style={{ marginBottom: 8, fontWeight: 500 }}>容量校验</div>
-            {editCabinetSlotsLoading && <div>校验中...</div>}
-            {!editCabinetSlotsLoading && (
+          )}
+          {editSelectedCabinetId && (
+            <div style={{ marginBottom: 24 }}>
+              <div style={{ marginBottom: 8, fontWeight: 500 }}>容量校验</div>
+              {editCabinetSlotsLoading && <div>校验中...</div>}
+              {!editCabinetSlotsLoading && (
+                <>
+                  {editValidationSummary?.errors?.length ? (
+                    <Alert
+                      type="error"
+                      showIcon
+                      message="校验未通过"
+                      description={
+                        <div>
+                          {editValidationSummary.errors.map((e) => (
+                            <div key={e}>{e}</div>
+                          ))}
+                        </div>
+                      }
+                    />
+                  ) : (
+                    <Alert type="success" showIcon message="基础容量校验通过" />
+                  )}
+                  {editValidationSummary?.warnings?.length ? (
+                    <Alert
+                      style={{ marginTop: 8 }}
+                      type="warning"
+                      showIcon
+                      message="建议关注项"
+                      description={
+                        <div>
+                          {editValidationSummary.warnings.map((w) => (
+                            <div key={w}>{w}</div>
+                          ))}
+                        </div>
+                      }
+                    />
+                  ) : null}
+                </>
+              )}
+            </div>
+          )}
+          <ProFormText name="serialNumber" label="序列号" />
+          <ProFormText name="managementIp" label="管理IP" />
+        </div>
+        {access.canAdmin && (
+          <div style={{ display: editActiveTab === 'ssh' ? 'block' : 'none' }}>
+            {!sshVerificationToken ? (
+              <Alert
+                showIcon
+                type="info"
+                message="需要验证管理员身份"
+                description="选择密钥和测试连接前，需要再次验证当前管理员身份。"
+                action={
+                  <Button
+                    htmlType="button"
+                    icon={<ShieldCheck size={16} />}
+                    onClick={() => setSshVerificationOpen(true)}
+                  >
+                    验证身份并加载密钥
+                  </Button>
+                }
+              />
+            ) : (
               <>
-                {editValidationSummary?.errors?.length ? (
+                <Alert
+                  showIcon
+                  type="info"
+                  style={{ marginBottom: sshBinding ? 12 : 24 }}
+                  message={`测试目标：${currentRow?.managementIp || '未设置管理 IP'}`}
+                  description="连接测试会返回服务器主机指纹，但不会自动建立 known_hosts 信任；首次连接后请核对指纹。"
+                />
+                {sshBinding && (
                   <Alert
-                    type="error"
                     showIcon
-                    message="校验未通过"
-                    description={
-                      <div>
-                        {editValidationSummary.errors.map((e) => (
-                          <div key={e}>{e}</div>
-                        ))}
-                      </div>
-                    }
+                    type="success"
+                    style={{ marginBottom: 24 }}
+                    message={`当前绑定：${sshBinding.keyLabel} (${sshBinding.keyType})`}
+                    description={`SSH 用户：${sshBinding.username} · 端口：${sshBinding.port}`}
                   />
-                ) : (
-                  <Alert type="success" showIcon message="基础容量校验通过" />
                 )}
-                {editValidationSummary?.warnings?.length ? (
+                <Form.Item label="选择密钥" required>
+                  <Select
+                    allowClear
+                    showSearch
+                    optionFilterProp="label"
+                    placeholder="选择密钥管理中的密钥"
+                    style={{ width: '100%' }}
+                    value={sshKeyId}
+                    options={sshKeys.map((key) => ({
+                      value: key.id,
+                      label: `${key.label} (${key.keyType})`,
+                    }))}
+                    onChange={(value) => {
+                      setSshKeyId(value);
+                      setSshTestResult(null);
+                    }}
+                  />
+                </Form.Item>
+                <Form.Item label="SSH 用户名" required>
+                  <Input
+                    value={sshUsername}
+                    placeholder="例如：root"
+                    onChange={(event) => {
+                      setSshUsername(event.target.value);
+                      setSshTestResult(null);
+                    }}
+                  />
+                </Form.Item>
+                <Form.Item label="SSH 端口" required>
+                  <InputNumber
+                    min={1}
+                    max={65535}
+                    style={{ width: '100%' }}
+                    value={sshPort}
+                    onChange={(value) => {
+                      setSshPort(value || 22);
+                      setSshTestResult(null);
+                    }}
+                  />
+                </Form.Item>
+                <Form.Item
+                  label="私钥口令"
+                  extra="仅用于本次连接测试，不会保存。未加密的私钥可以留空。"
+                >
+                  <Input.Password
+                    value={sshPassphrase}
+                    placeholder="请输入私钥口令"
+                    autoComplete="new-password"
+                    onChange={(event) => setSshPassphrase(event.target.value)}
+                  />
+                </Form.Item>
+                <Space style={{ marginBottom: sshTestResult ? 24 : 0 }}>
+                  <Button
+                    htmlType="button"
+                    type="primary"
+                    icon={<PlugZap size={16} />}
+                    loading={sshTestLoading}
+                    disabled={!currentRow?.managementIp || !sshKeyId}
+                    onClick={runSshConnectionTest}
+                  >
+                    测试连接
+                  </Button>
+                </Space>
+                {sshTestResult && (
                   <Alert
-                    style={{ marginTop: 8 }}
-                    type="warning"
                     showIcon
-                    message="建议关注项"
+                    type={sshTestResult.connected ? 'success' : 'error'}
+                    message={
+                      sshTestResult.connected
+                        ? '连接测试通过，点击“确定”后保存当前绑定'
+                        : `${sshStageText[sshTestResult.stage]}失败`
+                    }
                     description={
-                      <div>
-                        {editValidationSummary.warnings.map((w) => (
-                          <div key={w}>{w}</div>
-                        ))}
-                      </div>
+                      <Descriptions size="small" column={1}>
+                        <Descriptions.Item label="目标">
+                          {sshTestResult.username}@{sshTestResult.host}:
+                          {sshTestResult.port}
+                        </Descriptions.Item>
+                        <Descriptions.Item label="密钥">
+                          {sshTestResult.keyLabel} ({sshTestResult.keyType})
+                        </Descriptions.Item>
+                        <Descriptions.Item label="阶段">
+                          {sshStageText[sshTestResult.stage]}
+                        </Descriptions.Item>
+                        <Descriptions.Item label="耗时">
+                          {sshTestResult.elapsedMs} ms
+                        </Descriptions.Item>
+                        {sshTestResult.serverFingerprint && (
+                          <Descriptions.Item label="主机指纹">
+                            <Typography.Text copyable>
+                              {sshTestResult.serverFingerprint}
+                            </Typography.Text>
+                          </Descriptions.Item>
+                        )}
+                        {sshTestResult.algorithms?.kex && (
+                          <Descriptions.Item label="协商算法">
+                            {sshTestResult.algorithms.kex} /{' '}
+                            {sshTestResult.algorithms.serverHostKey} /{' '}
+                            {sshTestResult.algorithms.cipherClientToServer}
+                          </Descriptions.Item>
+                        )}
+                        {sshTestResult.banner && (
+                          <Descriptions.Item label="服务器信息">
+                            {sshTestResult.banner}
+                          </Descriptions.Item>
+                        )}
+                        {sshTestResult.errorMessage && (
+                          <Descriptions.Item label="错误">
+                            {sshTestResult.errorCode}:{' '}
+                            {sshTestResult.errorMessage}
+                          </Descriptions.Item>
+                        )}
+                      </Descriptions>
                     }
                   />
-                ) : null}
+                )}
               </>
             )}
           </div>
         )}
-        <ProFormText name="serialNumber" label="序列号" />
-        <ProFormText name="managementIp" label="管理IP" />
-        <ProFormSelect
-          name="status"
-          label="状态"
-          options={[
-            { value: 'online', label: '在线' },
-            { value: 'offline', label: '离线' },
-            { value: 'warning', label: '告警' },
-            { value: 'error', label: '故障' },
-            { value: 'maintenance', label: '维护中' },
-          ]}
-        />
-        <ProFormDatePicker name="purchaseDate" label="采购日期" />
-        <ProFormDatePicker name="warrantyExpiry" label="质保到期" />
-        <ProFormText name="vendor" label="供应商" />
-        <ProFormText name="owner" label="负责人" />
-        <ProFormSelect
-          name="department"
-          label="所属部门"
-          options={[
-            { value: '网络运维部', label: '网络运维部' },
-            { value: '应用开发部', label: '应用开发部' },
-            { value: '数据库运维部', label: '数据库运维部' },
-            { value: '安全运维部', label: '安全运维部' },
-            { value: '存储运维部', label: '存储运维部' },
-            { value: 'AI研发部', label: 'AI研发部' },
-          ]}
-        />
-        <ProFormTextArea name="description" label="备注" />
+        <div style={{ display: editActiveTab === 'basic' ? 'block' : 'none' }}>
+          <ProFormSelect
+            name="status"
+            label="状态"
+            options={[
+              { value: 'online', label: '在线' },
+              { value: 'offline', label: '离线' },
+              { value: 'warning', label: '告警' },
+              { value: 'error', label: '故障' },
+              { value: 'maintenance', label: '维护中' },
+            ]}
+          />
+          <ProFormDatePicker name="purchaseDate" label="采购日期" />
+          <ProFormDatePicker name="warrantyExpiry" label="质保到期" />
+          <ProFormText name="vendor" label="供应商" />
+          <ProFormText name="owner" label="负责人" />
+          <ProFormSelect
+            name="department"
+            label="所属部门"
+            options={[
+              { value: '网络运维部', label: '网络运维部' },
+              { value: '应用开发部', label: '应用开发部' },
+              { value: '数据库运维部', label: '数据库运维部' },
+              { value: '安全运维部', label: '安全运维部' },
+              { value: '存储运维部', label: '存储运维部' },
+              { value: 'AI研发部', label: 'AI研发部' },
+            ]}
+          />
+          <ProFormTextArea name="description" label="备注" />
+        </div>
       </ModalForm>
+
+      <Modal
+        title={
+          <Space>
+            <ShieldCheck size={18} />
+            验证管理员身份
+          </Space>
+        }
+        open={sshVerificationOpen}
+        okText="验证并加载"
+        cancelText="取消"
+        confirmLoading={sshVerificationLoading}
+        destroyOnHidden
+        onOk={verifyAndLoadSshBinding}
+        onCancel={() => {
+          setSshVerificationOpen(false);
+          setSshVerificationPassword('');
+        }}
+      >
+        <Typography.Paragraph type="secondary">
+          SSH 密钥属于敏感凭据，请输入当前管理员账户密码完成二次验证。
+        </Typography.Paragraph>
+        <Input.Password
+          autoFocus
+          value={sshVerificationPassword}
+          placeholder="当前管理员账户密码"
+          onChange={(event) => setSshVerificationPassword(event.target.value)}
+          onPressEnter={verifyAndLoadSshBinding}
+        />
+      </Modal>
 
       {/* 详情抽屉 */}
       <Drawer

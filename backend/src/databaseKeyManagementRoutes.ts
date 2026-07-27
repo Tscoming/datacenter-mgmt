@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
 import type { Request, Response } from 'express';
+import { utils as sshUtils } from 'ssh2';
 import { requireKeyManagementAccess } from './databaseAuthRoutes';
 import { getDatabaseSchema, queryDatabase, quoteIdentifier } from './db';
 
@@ -78,7 +79,7 @@ const mapKey = (row: ManagedKeyRow, includePrivateKey = false) => ({
   ...(includePrivateKey ? { privateKey: decryptPrivateKey(row) } : {}),
 });
 
-const ensureKeyTable = async (req: Request, schema: string) => {
+export const ensureKeyTable = async (req: Request, schema: string) => {
   await queryDatabase(
     req,
     'keyManagement.ensureTable',
@@ -100,6 +101,28 @@ const ensureKeyTable = async (req: Request, schema: string) => {
       )
     `,
   );
+};
+
+export const getManagedKeyForSsh = async (
+  req: Request,
+  schema: string,
+  id: string,
+) => {
+  await ensureKeyTable(req, schema);
+  const result = await queryDatabase<ManagedKeyRow>(
+    req,
+    'keyManagement.forSsh',
+    selectKeySql(schema, 'where id = $1'),
+    [id],
+  );
+  const row = result.rows[0];
+  if (!row) return null;
+  return {
+    id: row.id,
+    label: row.label,
+    keyType: row.key_type,
+    privateKey: decryptPrivateKey(row),
+  };
 };
 
 const selectKeySql = (schema: string, whereClause = '') => `
@@ -137,96 +160,29 @@ const returningKeySql = `
   ${isoExpr('updated_at')} as updated_at
 `;
 
-const encodeSshField = (value: Buffer | string) => {
-  const data = Buffer.isBuffer(value) ? value : Buffer.from(value);
-  const length = Buffer.alloc(4);
-  length.writeUInt32BE(data.length);
-  return Buffer.concat([length, data]);
-};
-
-const decodeBase64Url = (value: string) =>
-  Buffer.from(value.replace(/-/g, '+').replace(/_/g, '/'), 'base64');
-
-const encodeSshMpint = (value: Buffer) => {
-  let normalized = value;
-  while (normalized.length > 1 && normalized[0] === 0) {
-    normalized = normalized.subarray(1);
-  }
-  if (normalized[0] & 0x80) {
-    normalized = Buffer.concat([Buffer.from([0]), normalized]);
-  }
-  return encodeSshField(normalized);
-};
-
-const exportOpenSshPublicKey = (
-  publicKey: crypto.KeyObject,
-  keyType: GeneratedKeyType,
-) => {
-  const jwk = publicKey.export({ format: 'jwk' });
-  let algorithm: string;
-  let payload: Buffer;
-
-  if (keyType === 'ED25519' && jwk.x) {
-    algorithm = 'ssh-ed25519';
-    payload = Buffer.concat([
-      encodeSshField(algorithm),
-      encodeSshField(decodeBase64Url(jwk.x)),
-    ]);
-  } else if (keyType === 'ECDSA' && jwk.x && jwk.y) {
-    algorithm = 'ecdsa-sha2-nistp256';
-    const point = Buffer.concat([
-      Buffer.from([4]),
-      decodeBase64Url(jwk.x),
-      decodeBase64Url(jwk.y),
-    ]);
-    payload = Buffer.concat([
-      encodeSshField(algorithm),
-      encodeSshField('nistp256'),
-      encodeSshField(point),
-    ]);
-  } else if (keyType === 'RSA' && jwk.e && jwk.n) {
-    algorithm = 'ssh-rsa';
-    payload = Buffer.concat([
-      encodeSshField(algorithm),
-      encodeSshMpint(decodeBase64Url(jwk.e)),
-      encodeSshMpint(decodeBase64Url(jwk.n)),
-    ]);
-  } else {
-    throw new Error(`Unable to export ${keyType} public key`);
-  }
-
-  return `${algorithm} ${payload.toString('base64')}`;
-};
-
 export const generateSshKeyPair = (
   keyType: GeneratedKeyType,
   passphrase?: string,
 ) => {
-  let pair: { privateKey: crypto.KeyObject; publicKey: crypto.KeyObject };
-  if (keyType === 'ED25519') {
-    pair = crypto.generateKeyPairSync('ed25519');
-  } else if (keyType === 'ECDSA') {
-    pair = crypto.generateKeyPairSync('ec', { namedCurve: 'prime256v1' });
-  } else {
-    pair = crypto.generateKeyPairSync('rsa', {
-      modulusLength: 4096,
-      publicExponent: 0x10001,
-    });
-  }
-
-  const privateKey = pair.privateKey
-    .export({
-      format: 'pem',
-      type: 'pkcs8',
-      ...(passphrase
-        ? { cipher: 'aes-256-cbc', passphrase }
-        : {}),
-    })
-    .toString();
+  const encryption = passphrase
+    ? { passphrase, cipher: 'aes256-ctr', rounds: 16 }
+    : {};
+  const pair =
+    keyType === 'RSA'
+      ? sshUtils.generateKeyPairSync('rsa', { bits: 4096, ...encryption })
+      : keyType === 'ECDSA'
+        ? sshUtils.generateKeyPairSync('ecdsa', { bits: 256, ...encryption })
+        : passphrase
+          ? sshUtils.generateKeyPairSync('ed25519', {
+              passphrase,
+              cipher: 'aes256-ctr',
+              rounds: 16,
+            })
+          : sshUtils.generateKeyPairSync('ed25519');
 
   return {
-    privateKey,
-    publicKey: exportOpenSshPublicKey(pair.publicKey, keyType),
+    privateKey: pair.private,
+    publicKey: pair.public,
   };
 };
 
