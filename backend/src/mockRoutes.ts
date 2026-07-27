@@ -30,6 +30,7 @@ export const loadMockRouteModules = () => {
           './database3dRoutes',
           './databaseAlertRoutes',
           './databaseUserRoutes',
+          './databaseKeyManagementRoutes',
         ]
       : mockModulePaths;
   const modulePaths = [...dataSourceModulePaths, './telemetryRoutes'];

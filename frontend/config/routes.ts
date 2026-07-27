@@ -177,6 +177,12 @@ export default [
         component: './System/User',
         access: 'canAdmin',
       },
+      {
+        path: '/system/keys',
+        name: 'keys',
+        component: './System/KeyManagement',
+        access: 'canAdmin',
+      },
     ],
   },
 

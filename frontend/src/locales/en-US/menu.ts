@@ -73,4 +73,5 @@ export default {
   'menu.power': 'Power Management',
   'menu.system': 'System',
   'menu.system.users': 'User Management',
+  'menu.system.keys': 'Key Management',
 };

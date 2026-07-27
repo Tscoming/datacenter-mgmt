@@ -1,0 +1,54 @@
+.toolbar {
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  margin-bottom: 20px;
+}
+
+.search {
+  max-width: 360px;
+}
+
+.keyCard {
+  height: 100%;
+  border: 1px solid #e5e7eb;
+  cursor: pointer;
+  transition:
+    border-color 0.2s,
+    box-shadow 0.2s;
+}
+
+.keyCard:hover {
+  border-color: #1677ff;
+  box-shadow: 0 4px 16px rgb(22 119 255 / 10%);
+}
+
+.keyIcon {
+  display: inline-flex;
+  width: 42px;
+  height: 42px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 12px;
+  color: #fff;
+  background: #174f83;
+}
+
+.keyTitle {
+  overflow: hidden;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.keyMeta {
+  color: #8c8c8c;
+  font-size: 12px;
+}
+
+.empty {
+  padding: 72px 0;
+  border: 1px dashed #d9d9d9;
+  border-radius: 8px;
+  background: #fff;
+}

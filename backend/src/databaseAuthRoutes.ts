@@ -46,11 +46,18 @@ type SessionRecord = {
   expiresAt: number;
 };
 
+type ElevatedSessionRecord = {
+  userId: string;
+  sessionToken: string;
+  expiresAt: number;
+};
+
 const hashPassword = (password: string, salt: string) =>
   crypto.createHash('sha256').update(`${salt}:${password}`).digest('hex');
 
 const sessionsByToken = new Map<string, SessionRecord>();
 const sessionsByRefreshToken = new Map<string, SessionRecord>();
+const elevatedSessionsByToken = new Map<string, ElevatedSessionRecord>();
 
 const generateToken = () => `tk_${crypto.randomBytes(18).toString('hex')}_${Date.now()}`;
 
@@ -165,6 +172,11 @@ const getSessionFromRequest = (req: Request) => {
 const deleteSession = (session: SessionRecord) => {
   sessionsByToken.delete(session.token);
   sessionsByRefreshToken.delete(session.refreshToken);
+  for (const [token, elevatedSession] of elevatedSessionsByToken) {
+    if (elevatedSession.sessionToken === session.token) {
+      elevatedSessionsByToken.delete(token);
+    }
+  }
 };
 
 const ensureAuthUserTable = async (req: Request) => {
@@ -194,6 +206,40 @@ const requireLogin = async (req: Request, res: Response) => {
       errorCode: '401',
       errorMessage: '登录已过期，请重新登录！',
       success: false,
+    });
+    return null;
+  }
+
+  return user;
+};
+
+export const requireKeyManagementAccess = async (req: Request, res: Response) => {
+  const session = getSessionFromRequest(req);
+  const user = await requireLogin(req, res);
+  if (!user || !session) return null;
+
+  if (user.role !== 'admin') {
+    res.status(403).send({
+      success: false,
+      errorCode: '403',
+      errorMessage: '仅管理员可以访问密钥管理。',
+    });
+    return null;
+  }
+
+  const verificationToken = String(req.headers['x-key-management-token'] || '');
+  const elevatedSession = elevatedSessionsByToken.get(verificationToken);
+  if (
+    !elevatedSession ||
+    elevatedSession.userId !== user.id ||
+    elevatedSession.sessionToken !== session.token ||
+    elevatedSession.expiresAt <= Date.now()
+  ) {
+    if (elevatedSession) elevatedSessionsByToken.delete(verificationToken);
+    res.status(428).send({
+      success: false,
+      errorCode: 'KEY_MANAGEMENT_VERIFICATION_REQUIRED',
+      errorMessage: '二次验证已失效，请重新验证。',
     });
     return null;
   }
@@ -301,6 +347,60 @@ export default {
       }
     }
     res.send({ data: {}, success: true });
+  },
+
+  'POST /api/key-management/verify': async (req: Request, res: Response) => {
+    try {
+      const session = getSessionFromRequest(req);
+      const user = await requireLogin(req, res);
+      if (!user || !session) return;
+
+      if (user.role !== 'admin') {
+        res.status(403).send({
+          success: false,
+          errorCode: '403',
+          errorMessage: '仅管理员可以访问密钥管理。',
+        });
+        return;
+      }
+
+      const passwordHash = hashPassword(String(req.body?.password || ''), user.passwordSalt);
+      const expectedHash = Buffer.from(user.passwordHash, 'hex');
+      const actualHash = Buffer.from(passwordHash, 'hex');
+      if (
+        expectedHash.length !== actualHash.length ||
+        !crypto.timingSafeEqual(expectedHash, actualHash)
+      ) {
+        res.status(400).send({
+          success: false,
+          errorCode: 'INVALID_PASSWORD',
+          errorMessage: '当前账户密码不正确。',
+        });
+        return;
+      }
+
+      const verificationToken = `km_${crypto.randomBytes(24).toString('hex')}`;
+      const expiresAt = Date.now() + 5 * 60 * 1000;
+      for (const [token, elevatedSession] of elevatedSessionsByToken) {
+        if (
+          elevatedSession.expiresAt <= Date.now() ||
+          elevatedSession.sessionToken === session.token
+        ) {
+          elevatedSessionsByToken.delete(token);
+        }
+      }
+      elevatedSessionsByToken.set(verificationToken, {
+        userId: user.id,
+        sessionToken: session.token,
+        expiresAt,
+      });
+      res.send({
+        success: true,
+        data: { verificationToken, expiresAt },
+      });
+    } catch (error) {
+      handleAuthError(res, error);
+    }
   },
 
   'GET /api/login/captcha': (_req: Request, res: Response) => {

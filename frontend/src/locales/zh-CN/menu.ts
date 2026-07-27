@@ -73,4 +73,5 @@ export default {
   'menu.power': '电源管理',
   'menu.system': '系统管理',
   'menu.system.users': '用户管理',
+  'menu.system.keys': '密钥管理',
 };

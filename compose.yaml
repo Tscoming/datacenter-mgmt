@@ -52,6 +52,7 @@ services:
       PGUSER: ${POSTGRES_USER:-datacenter}
       PGPASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env.production}
       PGSCHEMA: ${PGSCHEMA:?set PGSCHEMA in the target environment .env}
+      KEY_MANAGEMENT_SECRET: ${KEY_MANAGEMENT_SECRET:?set KEY_MANAGEMENT_SECRET in .env.production}
       CABINET_TELEMETRY_LOW_FREQUENCY_SECONDS: 60
       CABINET_TELEMETRY_HIGH_FREQUENCY_SECONDS: 2
     ports:
